@@ -23,7 +23,11 @@
    node start.mjs
    ```
    - 若未登录，脚本会弹出浏览器登录页 → 提醒用户扫码或输入账号密码 → 登录后 Cookie 保存到 `cookies.json`。
-   - 若没有已保存课程，脚本会让用户输入课程 URL（形如 `https://mooc2-ans.chaoxing.com/...mycourse/stu?...courseid=...&clazzid=...&cpi=...`），或先运行 `node src/chaoxing_watch.mjs --list-courses` 列出课程让用户选。
+   - 若没有已保存课程，需要让用户提供「课程 URL」。请这样引导用户（用户常在这里卡住）：
+     - 让用户用浏览器登录超星网页版，打开要刷的那门课，进入**能看到章节列表**的那一页；
+     - 复制**浏览器地址栏的完整网址**，形如 `https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/stu?courseid=...&clazzid=...&cpi=...`；
+     - 强调：一定要含 `courseid` / `clazzid` / `cpi`，别用没有这些参数的首页/门户地址。
+   - 或者运行 `node src/chaoxing_watch.mjs --list-courses` 列出账号下的课程，再让用户按编号/课程名选择。
 5. 让脚本**持续运行**（真实播放，默认 2 倍速、看到 91% 即完成、断连自动重试），并确保实时进度网页在 `http://127.0.0.1:7788` 可访问（把该地址告诉用户）。
 6. 完成后告知用户汇总；若需要续跑，可用 `--start <n>` 跳过已看完的视频。
 

@@ -83,6 +83,27 @@ node start.mjs --headless --url "你的课程主页URL"
 
 ---
 
+## 📍 课程 URL 是什么？怎么填？
+
+**课程 URL = 你在浏览器里打开那门课程后，地址栏里的那串链接。** 它里面含有脚本需要的三个参数：`courseid`、`clazzid`、`cpi`。
+
+### 怎么拿到？
+1. 用浏览器登录 **超星学习通网页版**（`https://mooc2-ans.chaoxing.com` 或你学校入口）。
+2. 点进**你想刷的那门课**，进入能看到「章节列表」的那一页。
+3. **复制浏览器地址栏的完整网址**即可。
+
+### 长什么样？
+```
+https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/stu?courseid=265942178&clazzid=151672181&cpi=568203823&enc=...&t=...
+```
+其中 `courseid=...`、`clazzid=...`、`cpi=...` 就是脚本需要的。`enc`、`t` 等可有可无。
+
+### 常见坑
+- ❌ 别填「课程首页 / 登录后首页」或学校门户地址 —— 没有 `courseid` 的不行。
+- ✅ 一定要是**能看到章节列表**的课业页（通常是 `mycourse/stu` 或 `studentcourse`）。
+- 懒得分清？用 `node src/chaoxing_watch.mjs --list-courses` 列出账号下所有课程，告诉我课程名或编号即可。
+
+> 用 `node start.mjs` 被问到「请输入课程主页 URL」时，把上面那串地址粘贴进去，或直接 `node start.mjs --url "<那串地址>"`。
 ## 🧭 常见用法
 
 | 命令 | 说明 |

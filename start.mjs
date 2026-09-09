@@ -50,8 +50,9 @@ async function main() {
   if (!url && cfg.course && cfg.course.url) { url = cfg.course.url; info(`使用上次课程: ${url}`); }
   if (!url) {
     if (opts.listCourses) { runNode('src/chaoxing_watch.mjs', ['--list-courses']); return; }
+    info('需要课程 URL。获取：浏览器登录超星网页版 → 打开该课程（能看到章节列表那一页）→ 复制地址栏完整网址。');
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    url = (await rl.question('请输入课程主页 URL: ')).trim();
+    url = (await rl.question('请输入课程 URL（地址里需含 courseid / clazzid / cpi）: ')).trim();
     rl.close();
   }
   const course = courseFromUrl(url);
