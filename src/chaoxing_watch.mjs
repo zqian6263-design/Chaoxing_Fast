@@ -61,17 +61,18 @@ function parseArgs(argv) {
 }
 
 /* —— 实时进度仪表盘 —— */
-const DASH = { phase: 'start', scanDone: 0, scanTotal: 0, total: 0, done: 0, failed: 0, noPlayer: 0, curIdx: 0, curTitle: '', curName: '', curCt: 0, curDur: 0, log: [], startedAt: new Date().toISOString() };
+const DASH = { phase: 'start', paused: false, scanDone: 0, scanTotal: 0, total: 0, done: 0, failed: 0, noPlayer: 0, curIdx: 0, curTitle: '', curName: '', curCt: 0, curDur: 0, log: [], startedAt: new Date().toISOString() };
 function dashLog(msg) { DASH.log.push(`[${new Date().toLocaleTimeString('zh-CN', { hour12: false })}] ${msg}`); if (DASH.log.length > 80) DASH.log.shift(); }
 function startDashboard(port) {
   const server = createServer((req, res) => {
     if (req.url === '/api/status') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(DASH)); return; }
+    if (req.url.startsWith('/api/control')) { const q = new URL(req.url, 'http://x').searchParams.get('action'); if (q === 'pause') DASH.paused = true; else if (q === 'resume') DASH.paused = false; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ paused: DASH.paused })); return; }
     if (req.url === '/') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(DASH_HTML); return; }
     res.writeHead(404); res.end('Not Found');
   });
   server.listen(port, '127.0.0.1', () => info(`实时进度网页已开启: http://127.0.0.1:${port}`));
 }
-const DASH_HTML = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>刷课实时进度</title><style>body{font-family:system-ui,Segoe UI,Microsoft YaHei,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:24px}.card{background:#1e293b;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.3)}h1{font-size:22px;margin:0 0 4px}.sub{color:#94a3b8;font-size:13px}.badge{display:inline-block;padding:2px 12px;border-radius:999px;font-size:13px;background:#334155}.badge.scan{background:#7c3aed}.badge.watch{background:#2563eb}.badge.done{background:#16a34a}.big{font-size:42px;font-weight:700}.lb{color:#94a3b8;font-size:13px;margin:6px 0}.bar{height:14px;background:#0b1220;border-radius:999px;overflow:hidden;margin-top:8px}.fill{height:100%;background:linear-gradient(90deg,#22d3ee,#3b82f6);transition:width .6s}.mid{display:inline-block;margin-left:12px;font-size:14px;color:#94a3b8}#lines{font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.6;max-height:340px;overflow:auto}.line{margin:0;white-space:pre-wrap}</style></head><body><h1>超星刷课 · 实时进度</h1><div class="sub" id="sub">真实播放，看到 0.91 即完成</div><div class="card"><span id="phase" class="badge">启动中</span><div style="margin-top:14px"><span class="lb">已完成视频</span> <span id="done" class="big">0</span> / <span id="total">0</span><span class="mid" id="meta"></span><div class="bar"><div id="fill" class="fill" style="width:0%"></div></div></div></div><div class="card"><div class="lb">当前播放</div><div id="cur" style="font-size:18px;font-weight:600">-</div><div class="lb">本条进度</div><div id="pct" style="font-size:26px;font-weight:700">0%</div><div class="bar"><div id="fill2" class="fill" style="width:0%"></div></div></div><div class="card"><div class="lb">最近日志</div><div id="lines"></div></div><script>async function tick(){try{var d=await (await fetch('/api/status',{cache:'no-store'})).json();var ph=document.getElementById('phase');ph.className='badge';ph.classList.add(d.phase);ph.textContent=d.phase==='scan'?('扫描任务清单 '+d.scanDone+'/'+d.scanTotal):d.phase==='watch'?('播放中 '+d.done+'/'+d.total):'已完成';document.getElementById('done').textContent=d.done;document.getElementById('total').textContent=d.total;var f=document.getElementById('fill');f.style.width=(d.total?(d.done/d.total*100):0)+'%';document.getElementById('meta').textContent=(d.noPlayer||d.failed)?('失败 '+d.failed+' / 无播放器 '+d.noPlayer):'';if(d.phase==='scan'){document.getElementById('cur').textContent='正在扫描 '+d.scanDone+'/'+d.scanTotal;}else{document.getElementById('cur').textContent=(d.curIdx?d.curIdx+'/'+d.total+' ': '')+(d.curName||'-')+(d.curTitle?(' · '+d.curTitle):'');}var pct=document.getElementById('pct');pct.textContent=(d.curDur?Math.round(d.curCt/d.curDur*100):0)+'%';document.getElementById('fill2').style.width=(d.curDur?Math.min(100,d.curCt/d.curDur*100):0)+'%';var lines=document.getElementById('lines');lines.innerHTML='';(d.log||[]).forEach(function(l){var p=document.createElement('div');p.className='line';p.textContent=l;lines.appendChild(p);});lines.scrollTop=lines.scrollHeight;}catch(e){}}tick();setInterval(tick,1000);</script></body></html>`;
+const DASH_HTML = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>刷课实时进度</title><style>body{font-family:system-ui,Segoe UI,Microsoft YaHei,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:24px}.card{background:#1e293b;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.3)}h1{font-size:22px;margin:0 0 4px}.sub{color:#94a3b8;font-size:13px}.badge{display:inline-block;padding:2px 12px;border-radius:999px;font-size:13px;background:#334155}.badge.scan{background:#7c3aed}.badge.watch{background:#2563eb}.badge.done{background:#16a34a}.big{font-size:42px;font-weight:700}.lb{color:#94a3b8;font-size:13px;margin:6px 0}.bar{height:14px;background:#0b1220;border-radius:999px;overflow:hidden;margin-top:8px}.fill{height:100%;background:linear-gradient(90deg,#22d3ee,#3b82f6);transition:width .6s}.mid{display:inline-block;margin-left:12px;font-size:14px;color:#94a3b8}#lines{font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.6;max-height:340px;overflow:auto}.line{margin:0;white-space:pre-wrap}</style></head><body><h1>超星刷课 · 实时进度</h1><div class="sub" id="sub">真实播放，看到 0.91 即完成</div><div class="card"><span id="phase" class="badge">启动中</span> <button id="btnpause" onclick="toggle()" style="float:right;background:#3b82f6;border:none;color:#fff;padding:6px 14px;border-radius:8px;cursor:pointer">⏸ 暂停</button><div style="margin-top:14px"><span class="lb">已完成视频</span> <span id="done" class="big">0</span> / <span id="total">0</span><span class="mid" id="meta"></span><div class="bar"><div id="fill" class="fill" style="width:0%"></div></div></div></div><div class="card"><div class="lb">当前播放</div><div id="cur" style="font-size:18px;font-weight:600">-</div><div class="lb">本条进度</div><div id="pct" style="font-size:26px;font-weight:700">0%</div><div class="bar"><div id="fill2" class="fill" style="width:0%"></div></div></div><div class="card"><div class="lb">最近日志</div><div id="lines"></div></div><script>var paused=false;async function toggle(){var a=paused?'resume':'pause';await fetch('/api/control?action='+a);}function updatePause(p){paused=p;var b=document.getElementById('btnpause');b.textContent=p?'▶ 继续':'⏸ 暂停';}async function tick(){try{var d=await (await fetch('/api/status',{cache:'no-store'})).json();updatePause(d.paused);var ph=document.getElementById('phase');ph.className='badge';ph.classList.add(d.phase);ph.textContent=d.phase==='scan'?('扫描任务清单 '+d.scanDone+'/'+d.scanTotal):d.phase==='watch'?('播放中 '+d.done+'/'+d.total):'已完成';document.getElementById('done').textContent=d.done;document.getElementById('total').textContent=d.total;var f=document.getElementById('fill');f.style.width=(d.total?(d.done/d.total*100):0)+'%';document.getElementById('meta').textContent=(d.noPlayer||d.failed)?('失败 '+d.failed+' / 无播放器 '+d.noPlayer):'';if(d.phase==='scan'){document.getElementById('cur').textContent='正在扫描 '+d.scanDone+'/'+d.scanTotal;}else{document.getElementById('cur').textContent=(d.curIdx?d.curIdx+'/'+d.total+' ': '')+(d.curName||'-')+(d.curTitle?(' · '+d.curTitle):'');}var pct=document.getElementById('pct');pct.textContent=(d.curDur?Math.round(d.curCt/d.curDur*100):0)+'%';document.getElementById('fill2').style.width=(d.curDur?Math.min(100,d.curCt/d.curDur*100):0)+'%';var lines=document.getElementById('lines');lines.innerHTML='';(d.log||[]).forEach(function(l){var p=document.createElement('div');p.className='line';p.textContent=l;lines.appendChild(p);});lines.scrollTop=lines.scrollHeight;}catch(e){}}tick();setInterval(tick,1000);</script></body></html>`;
 
 async function mapConcurrent(items, limit, worker) {
   const results = new Array(items.length); let i = 0;
@@ -97,9 +98,11 @@ async function buildPlan(course, cookie, pointsLimit, concurrency) {
         const r = await httpGet('https://mooc1.chaoxing.com/mooc-ans/knowledge/cards', { clazzid: course.clazzId, courseid: course.courseId, knowledgeid: p.id, ut: 's', cpi: course.cpi, v: '2025-0424-1038-3', mooc2: 1, num }, cookie);
         const d = decodeCourseCard(r.text);
         if (d.notOpen) { notOpen = true; break; }
-        for (const j of d.jobs) j.num = num;
-        jobs = jobs.concat(d.jobs);
-        if (jobs.length && num >= '2') break;
+        const newJobs = d.jobs;
+        for (const j of newJobs) j.num = num;
+        jobs = jobs.concat(newJobs);
+        // 已拿到任务、且当前编号没有新任务 → 后面不再有卡片，可停（避免漏掉同一知识点下的多个视频）
+        if (jobs.length > 0 && newJobs.length === 0) break;
         await sleep(rand(30, 80));
       }
       return { point: p, jobs, notOpen };
@@ -183,6 +186,12 @@ async function watchVideo(browser, course, point, job, opts) {
     const maxMs = opts.maxSec > 0 ? opts.maxSec * 1000 : (dur > 0 ? (dur * opts.ratio / Math.max(opts.rate, 1)) * 1000 + 120000 : 1000 * 60 * 90);
     while (Date.now() - start < maxMs) {
       await sleep(6000);
+      if (DASH.paused) {
+        await video.evaluate((el) => el.pause()).catch(() => {});
+        warn(`[${job.name}] 已暂停，等待在网页点击「继续」…`);
+        while (DASH.paused) await sleep(3000);
+        await ensurePlaying(vframe, video, opts);
+      }
       const st = await check();
       DASH.curCt = st.ct; if (st.dur > 0) DASH.curDur = st.dur;
       if (st.ended || (st.dur > 0 && st.ct >= st.dur * opts.ratio)) {
@@ -230,6 +239,7 @@ async function main() {
   const stat = { done: 0, no_player: 0, timeout: 0 };
   for (let i = 0; i < slice.length; i++) {
     const { point, job } = slice[i];
+    if (DASH.paused) { warn('已暂停，等待在网页点击「继续」…'); while (DASH.paused) await sleep(3000); }
     DASH.phase = 'watch'; DASH.curIdx = opts.start + i + 1; DASH.curTitle = point.title; DASH.curName = job.name; DASH.curCt = 0; DASH.curDur = (job.attDuration || 0);
     info(`(${opts.start + i + 1}/${vids.length}) ${point.title} -> ${job.name}`);
     const r = await watchVideo(ctx, course, point, job, opts);
