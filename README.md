@@ -36,6 +36,15 @@
 
 ---
 
+## 🤖 给 Agent 的一句话部署提示词
+
+> 把下面这一整行直接发给 **Claude Code / Codex / Hermes / OpenCode** 等 Agent 即可完成本地部署并持续运行：
+
+```
+在本地部署并运行 https://github.com/zqian6263-design/Chaoxing_Fast 这个项目：安装 Node 18+，运行 setup 完成依赖与 Chromium 浏览器安装，然后用 node start.mjs 启动；首次启动时请按提示让我登录超星账号（在弹出页面输入账号密码或扫码），并向我要课程的 URL（或让我用 --list-courses 列出后选择）；之后让脚本持续稳定运行，并开启实时进度网页 http://127.0.0.1:7788。
+```
+
+> Agent 会自动读取本仓库的 [`AGENTS.md`](AGENTS.md) 获取准确执行步骤。部署完成后，**你只需提供超星账号密码与课程 URL**。
 ## 🚀 快速开始
 
 ### 环境要求
