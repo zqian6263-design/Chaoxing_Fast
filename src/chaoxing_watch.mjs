@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
 import {
   info, ok, warn, err, sleep, rand,
   readCookieFile, cookieHeader, hasSession, courseFromUrl,
@@ -35,7 +36,7 @@ const USAGE = `
 `.trim();
 
 function parseArgs(argv) {
-  const o = { url: null, rate: 2, ratio: 0.91, limit: 0, start: 0, visible: true, list: false, listCourses: false, maxSec: 0, dashboard: false, port: 7788, videoRetries: 3, scanConcurrency: 6 };
+  const o = { url: null, rate: 2, ratio: 0.91, limit: 0, start: 0, visible: true, list: false, listCourses: false, maxSec: 0, dashboard: false, port: 7788, videoRetries: 3, scanConcurrency: 6, open: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], next = () => (i + 1 < argv.length ? argv[++i] : null);
     switch (a) {
@@ -52,6 +53,8 @@ function parseArgs(argv) {
       case '--list': o.list = true; break;
       case '--list-courses': o.listCourses = true; break;
       case '--dashboard': o.dashboard = true; break;
+      case '--open': o.open = true; break;
+      case '--no-open': o.open = false; break;
       case '--port': o.port = parseInt(next(), 10); break;
       case '--max-sec': o.maxSec = Math.max(0, parseFloat(next())); break;
       default: err(`未知参数: ${a}`); process.exit(1);
@@ -63,6 +66,13 @@ function parseArgs(argv) {
 /* —— 实时进度仪表盘 —— */
 const DASH = { phase: 'start', paused: false, scanDone: 0, scanTotal: 0, total: 0, done: 0, failed: 0, noPlayer: 0, curIdx: 0, curTitle: '', curName: '', curCt: 0, curDur: 0, log: [], startedAt: new Date().toISOString() };
 function dashLog(msg) { DASH.log.push(`[${new Date().toLocaleTimeString('zh-CN', { hour12: false })}] ${msg}`); if (DASH.log.length > 80) DASH.log.shift(); }
+function openUrl(url) {
+  try {
+    const cmd = process.platform === 'win32' ? 'cmd' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+    const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+    spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
+  } catch {}
+}
 function startDashboard(port) {
   const server = createServer((req, res) => {
     if (req.url === '/api/status') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(DASH)); return; }
@@ -246,7 +256,7 @@ async function main() {
   if (!hasSession(cookies)) { err('未登录，请先运行：node src/login.mjs'); process.exit(1); }
   const course = await resolveCourse(opts);
 
-  if (opts.dashboard) startDashboard(opts.port);
+  if (opts.dashboard) { startDashboard(opts.port); if (opts.open) setTimeout(() => openUrl(`http://127.0.0.1:${opts.port}`), 1200); }
   const plan = await buildPlan(course, cookie, opts.limit, opts.scanConcurrency);
   const vids = [];
   for (const { point, jobs, notOpen, finished } of plan) for (const j of jobs) if (j.type === 'video') vids.push({ point, job: j });
