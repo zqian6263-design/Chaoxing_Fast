@@ -7,3 +7,8 @@ watch_run.log
 watch_run_err.log
 _ref/
 .DS_Store
+
+# Impeccable 部署的第三方 skill（如需随仓库分发可去掉）
+.github/skills/
+.impeccable/
+tmp/

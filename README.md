@@ -36,6 +36,8 @@
 
 ![Dashboard](assets/dashboard.png)
 
+> 🎨 **设计系统（Impeccable）**：Dashboard 已用 [Impeccable](https://impeccable.style/) 的设计检测（去 AI 味、提升对比度、优化动画），复检 **0 处问题**。设计规范见 [`DESIGN.md`](DESIGN.md) 与 [`PRODUCT.md`](PRODUCT.md)。
+
 ---
 
 ## 🤖 给 Agent 的一句话部署提示词
