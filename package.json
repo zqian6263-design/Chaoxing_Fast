@@ -1,0 +1,17 @@
+{
+  "name": "chaoxing-fast",
+  "version": "1.0.0",
+  "description": "超星学习通(泛雅/尔雅) 任务点自动完成工具：真实播放模式 + 接口模式，账号密码登录，跨平台，带实时进度网页。",
+  "type": "module",
+  "bin": { "chaoxing-fast": "start.mjs" },
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node start.mjs",
+    "login": "node src/login.mjs",
+    "watch": "node src/chaoxing_watch.mjs",
+    "auto": "node src/chaoxing_auto.mjs",
+    "setup": "node setup.mjs"
+  },
+  "dependencies": { "playwright": "^1.49.0" },
+  "license": "GPL-3.0"
+}
