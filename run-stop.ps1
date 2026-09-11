@@ -1,0 +1,2 @@
+﻿$procs = Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*chaoxing_watch.mjs*' -or $_.CommandLine -like '*start.mjs*' }
+if ($procs) { $procs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }; Write-Host '已停止刷课脚本。' } else { Write-Host '当前没有在运行的刷课脚本。' }

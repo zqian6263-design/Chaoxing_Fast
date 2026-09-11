@@ -108,6 +108,21 @@ https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/stu?courseid=265942178&clazzid
 - 懒得分清？用 `node src/chaoxing_watch.mjs --list-courses` 列出账号下所有课程，告诉我课程名或编号即可。
 
 > 用 `node start.mjs` 被问到「请输入课程主页 URL」时，把上面那串地址粘贴进去，或直接 `node start.mjs --url "<那串地址>"`。
+## 🖱️ 一键启动 / 停止 / 开机自启（Windows）
+
+| 文件 | 作用 |
+| --- | --- |
+| `start-windows.bat` | 双击：后台启动刷课 + 自动打开进度页 `http://127.0.0.1:7788` |
+| `stop-windows.bat` | 双击：停止刷课 |
+| `install-autostart.ps1` | 设置「开机自启」：登录 Windows 后自动运行（无需管理员） |
+| `uninstall-autostart.ps1` | 取消开机自启 |
+| `start.sh` | Linux / macOS：`bash start.sh` 后台启动 |
+
+> ⚠️ **重启电脑后 `http://127.0.0.1:7788` 打不开是正常的**：这个网页由本地脚本进程临时提供，关机后进程结束、自然就没了。
+> 解决办法：重启后双击 **`start-windows.bat`** 重新启动；或者运行一次 `install-autostart.ps1`，之后每次登录都会自动恢复。
+>
+> 首次使用请先用 `node start.mjs --url "<课程URL>"` 完成**登录 + 课程设置**，再开启开机自启（否则自启时会卡在登录/输入）。
+> 启动时会**自动打开浏览器**到进度页，可用 `--no-open` 关闭自动打开。
 ## 🧭 常见用法
 
 | 命令 | 说明 |

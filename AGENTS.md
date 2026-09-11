@@ -40,3 +40,8 @@
 ## 运行提示（告知用户）
 - Dashboard（`http://127.0.0.1:7788`）右上角有 **⏸ 暂停 / ▶ 继续** 按钮；要关电脑先点暂停，之后 `node start.mjs` 会自动续跑（已完成视频不会重复刷）。
 - 一个知识点下的**多个视频会全部看完**，不会只看第一个就跳章节。
+
+## 一键运行 / 开机自启（告知用户）
+- Windows：双击 `start-windows.bat` 后台启动并自动打开进度页；`stop-windows.bat` 停止。
+- 想开机自动运行：运行一次 `install-autostart.ps1`（无需管理员）；`uninstall-autostart.ps1` 取消。
+- 重启电脑后 `http://127.0.0.1:7788` 会失效（网页由本地进程提供），双击 `start-windows.bat` 或依赖开机自启即可恢复。
