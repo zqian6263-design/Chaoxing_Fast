@@ -12,3 +12,5 @@ _ref/
 .github/skills/
 .impeccable/
 tmp/
+watchdog.log
+.watchdog-stop
