@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="study-csrf" content="%%CSRF_TOKEN%%">
+<title>Chaoxing_Fast · 学习辅导</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f8fc;color:#1d2939;font:15px/1.65 "Microsoft YaHei",system-ui,sans-serif}main{max-width:1000px;margin:32px auto;padding:0 18px}
+h1{font-size:25px;margin:0 0 3px}h2{font-size:18px;margin:0 0 14px}p{margin:4px 0 12px;color:#5b6475}.muted{color:#667085;font-size:13px}.panel{background:#fff;border:1px solid #e4e7ec;border-radius:14px;padding:22px;margin:18px 0;box-shadow:0 2px 10px #11182708}
+label{font-weight:600;display:block;margin-top:12px;margin-bottom:6px}input,textarea{width:100%;padding:12px;border:1px solid #cdd5df;border-radius:8px;font:inherit;background:#fff;color:#222}textarea{resize:vertical}button{border:0;border-radius:8px;padding:10px 16px;background:#155eef;color:#fff;font-weight:600;cursor:pointer;margin:10px 8px 0 0}button.secondary{color:#344054;background:#eaecf0}button:disabled{opacity:.6;cursor:wait}
+.status{display:inline-block;background:#ecfdf3;padding:5px 10px;border-radius:30px;color:#027a48;font-size:13px}
+.out{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.85;border-left:3px solid #9bbaf9;padding:12px 16px;background:#f6f8fc;border-radius:6px;min-height:55px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px} .grid input{max-width:160px}
+#tasks{padding:0;list-style:none}#tasks li{padding:9px 3px;border-bottom:1px solid #e4e7ec}
+a{color:#155eef} @media(max-width:680px){.grid{grid-template-columns:1fr} main{margin:20px auto}}
+</style>
+</head><body><main>
+<header><h1>学习通 · AI 学习辅导</h1><p>测验清单与学习解释。不会自动填入答案，也不会自动提交。</p><span class="status" id="health">检查服务中…</span> <a href="http://127.0.0.1:7788" rel="noreferrer">视频进度页面 ↗</a></header>
+<section class="panel"><h2>1. 连接免费模型</h2>
+<p>从 <a href="https://opencode.ai/zen" target="_blank" rel="noreferrer">OpenCode Zen</a> 获取 API Key，在这里粘贴。密钥只保存在此 Node 进程的内存中，退出后消失。选用模型固定为 <strong>mimo-v2.6-flash-free</strong>，绝不自动切换付费模型。首次使用服务商可能要求账户设置。</p>
+<label for="key">OpenCode Zen API Key</label><input id="key" type="password" autocomplete="off" placeholder="粘贴密钥（不会保存到磁盘）" />
+<button id="save-key">本次会话启用</button><button class="secondary" id="clear-key">清除已启用密钥</button>
+<div class="muted" id="key-status">尚未配置</div></section>
+<section class="panel"><h2>2. 只读扫描章节测验</h2>
+<p>扫描当前课程中标识为 workid / quiz / exam 的任务点，只展示结构和完成状态，不打开作答、不会提交、不会传送题目给 AI。扫描结果可能不完整。</p>
+<div class="grid">
+<div><label for="points">知识点扫描数量（1–50）</label><input id="points" type="number" min="1" max="50" value="8" /></div>
+<div><label for="cards">每知识点扫描卡片（1–7）</label><input id="cards" type="number" min="1" max="7" value="4" /></div>
+</div><button id="scan">扫描课程测验</button><div class="muted" id="scan-status">尚未扫描</div><ul id="tasks"></ul>
+</section>
+<section class="panel"><h2>3. 获取知识点讲解</h2>
+<p>请自行复制题干及选项。只有点击“生成讲解”才会将以下文本发送到 OpenCode Zen；不要粘贴账号、Cookie 或任何敏感信息。AI 可能出错，请结合课程资料核对。</p>
+<label for="question">题干与选项</label><textarea id="question" rows="7" maxlength="8000" placeholder="粘贴一道题及全部选项（可不提供标准答案）"></textarea>
+<label for="notes">相关课程资料（可选）</label><textarea id="notes" rows="4" maxlength="12000" placeholder="粘贴课堂笔记、教材摘录或相关概念"></textarea>
+<button id="explain">生成知识点与推理讲解</button><div class="muted" id="explain-status">单次点击请求，最多 20 次 / 本次运行</div>
+<h2 style="margin-top:20px">AI 分析</h2><div class="out" id="answer" role="status" aria-live="polite">分析会显示在这里。</div>
+</section>
+<footer class="muted">所有服务仅绑定 127.0.0.1。正式测验的作答与提交由用户自行决定，平台任务完成状态为准。</footer>
+</main><script src="/client.js" defer></script></body></html>

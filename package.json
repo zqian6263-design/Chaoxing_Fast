@@ -16,7 +16,8 @@
     "auto": "node src/chaoxing_auto.mjs",
     "setup": "node setup.mjs",
     "test": "node --test",
-    "doctor": "node doctor.mjs"
+    "doctor": "node doctor.mjs",
+    "quiz": "node src/quiz/server.mjs"
   },
   "dependencies": {
     "playwright": "^1.49.0"
