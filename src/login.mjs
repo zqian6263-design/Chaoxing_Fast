@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /* src/login.mjs —— 超星账号登录，导出 cookies.json */
+import './runtime.mjs';
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';

@@ -1,7 +1,28 @@
 #!/usr/bin/env node
-/* setup.mjs —— 跨平台安装依赖 + 下载 Chromium */
+/* Deterministic installer; never report success after a failed step. */
 import { execSync } from 'node:child_process';
-console.log('==> Chaoxing_Fast 部署');
-try { execSync('npm install', { stdio: 'inherit' }); } catch (e) { console.error('npm install 失败', e.message); }
-try { execSync('npx playwright install chromium', { stdio: 'inherit' }); } catch (e) { console.error('playwright 浏览器下载失败，可稍后重试: npx playwright install chromium'); }
-console.log('==> 部署完成！运行: node start.mjs --url "<课程URL>"');
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = path.dirname(fileURLToPath(import.meta.url));
+process.env.PLAYWRIGHT_BROWSERS_PATH ||= path.join(root, '.runtime', 'browsers');
+process.env.npm_config_cache ||= path.join(root, '.runtime', 'npm-cache');
+
+const major = Number(process.versions.node.split('.')[0]);
+if (!Number.isFinite(major) || major < 20) {
+  console.error('Node.js 20+ is required (detected ' + process.version + ').');
+  process.exit(1);
+}
+const steps = [
+  ['Install locked dependencies', 'npm ci --no-audit --no-fund'],
+  ['Install matching Chromium', 'npx playwright install chromium'],
+  ['Validate deployment', 'node doctor.mjs'],
+];
+for (const [label, command] of steps) {
+  console.log('==> ' + label);
+  try { execSync(command, { stdio: 'inherit' }); }
+  catch (error) {
+    console.error('FAILED: ' + label + '. See output above. Exit=' + (error.status ?? 'unknown'));
+    process.exit(1);
+  }
+}
+console.log('==> Installation successful. Run: node doctor.mjs');

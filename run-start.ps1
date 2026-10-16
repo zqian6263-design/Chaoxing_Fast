@@ -9,6 +9,8 @@ $watchdog = Join-Path $dir 'watchdog.ps1'
 
 if (Test-Path -LiteralPath $stopFile) { Remove-Item -LiteralPath $stopFile -Force }
 
+$portableNodeDir = Join-Path $dir '.runtime\node'
+if (Test-Path -LiteralPath (Join-Path $portableNodeDir 'node.exe')) { $env:PATH = "$portableNodeDir;$env:PATH" }
 $nodeCmd = Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $nodeCmd) {
   Write-Host '未找到 Node.js 18+，请先安装 Node.js。'

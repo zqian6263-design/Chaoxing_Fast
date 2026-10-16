@@ -1,3 +1,9 @@
-﻿$startup = [Environment]::GetFolderPath('Startup')
-$bat = Join-Path $startup 'ChaoxingFastWatch.bat'
-if (Test-Path $bat) { Remove-Item -LiteralPath $bat -Force; Write-Host '已取消开机自启。' } else { Write-Host '未设置开机自启。' }
+# Remove only this project's known startup entries.
+$startup = [Environment]::GetFolderPath('Startup')
+foreach ($name in @('ChaoxingFastWatch.lnk', 'ChaoxingFastWatch.bat')) {
+  $path = Join-Path $startup $name
+  if (Test-Path -LiteralPath $path) {
+    Remove-Item -LiteralPath $path -Force
+    Write-Host "Removed: $path"
+  }
+}

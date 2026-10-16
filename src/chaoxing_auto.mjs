@@ -108,4 +108,4 @@ async function main() {
   ok(`完成: ${done}`); warn(`需真实播放(改用 watch): ${watch}`); warn(`跳过: ${skipped}`);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.url.replace('file://', '')) main().catch((e) => { err(`运行出错: ${e.stack || e.message}`); process.exit(1); });
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((e) => { err(`运行出错: ${e.stack || e.message}`); process.exit(1); });

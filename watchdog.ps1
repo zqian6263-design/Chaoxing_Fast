@@ -1,91 +1,64 @@
-﻿param(
+param(
   [string]$EntryPoint = 'start.mjs',
   [int]$Port = 7788
 )
-
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location -LiteralPath $dir
-
 $stopFile = Join-Path $dir '.watchdog-stop'
+$exitFile = Join-Path $dir '.watchdog-last-exit'
 $logFile = Join-Path $dir 'watchdog.log'
-$outLog = Join-Path $dir 'watch_run.log'
-$errLog = Join-Path $dir 'watch_run_err.log'
+$entryPath = Join-Path $dir $EntryPoint
+$childPath = Join-Path $dir 'src\chaoxing_watch.mjs'
+$worker = Join-Path $dir 'watchdog-worker.mjs'
 
-function Write-WatchdogLog([string]$Message) {
-  $line = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
-  Add-Content -LiteralPath $logFile -Value $line -Encoding UTF8
+function Log([string]$msg) {
+  Add-Content -LiteralPath $logFile -Value ("$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $msg") -Encoding UTF8
 }
-
-function Resolve-NodePath {
-  $cmd = Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($cmd -and $cmd.Source) { return $cmd.Source }
-
-  $candidates = @(
-    (Join-Path $env:ProgramFiles 'nodejs\node.exe'),
-    (Join-Path ${env:ProgramFiles(x86)} 'nodejs\node.exe'),
-    (Join-Path $env:LOCALAPPDATA 'Programs\nodejs\node.exe')
-  )
-  foreach ($candidate in $candidates) {
-    if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }
-  }
-  return $null
-}
-
-function Get-WatchProcesses {
-  return @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object {
-    $_.CommandLine -and (
-      $_.CommandLine -like "*$EntryPoint*" -or
-      ($EntryPoint -ne 'chaoxing_watch.mjs' -and $_.CommandLine -like '*chaoxing_watch.mjs*')
-    )
+function Get-ProjectProcesses {
+  @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object {
+    $_.CommandLine -and ($_.CommandLine.Contains($entryPath) -or $_.CommandLine.Contains($childPath))
   })
 }
-
-function Stop-WatchProcesses {
-  $procs = @(Get-WatchProcesses)
-  foreach ($proc in $procs) {
+function Stop-ProjectProcesses {
+  foreach ($proc in @(Get-ProjectProcesses)) {
     Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
   }
 }
-
-function Start-WatchProcess([string]$NodePath) {
-  $arguments = @($EntryPoint)
-  if ([IO.Path]::GetFileName($EntryPoint) -eq 'chaoxing_watch.mjs') {
-    $arguments += @('--headless', '--dashboard')
-  } else {
-    $arguments += '--headless'
-  }
-
-  Write-WatchdogLog ('启动: ' + $NodePath + ' ' + ($arguments -join ' '))
-  Start-Process -FilePath $NodePath -ArgumentList $arguments -WorkingDirectory $dir -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog | Out-Null
-}
-
 $mutex = New-Object System.Threading.Mutex($false, 'Local\ChaoxingFastWatchdog')
-$hasMutex = $false
-try { $hasMutex = $mutex.WaitOne(0) } catch { $hasMutex = $false }
-if (-not $hasMutex) { exit 0 }
-
+$locked = $false
+try { $locked = $mutex.WaitOne(0) } catch { }
+if (-not $locked) { $mutex.Dispose(); exit 0 }
 try {
-  Write-WatchdogLog '看门狗已启动，将自动保持进度网页在线'
-  $lastStart = [DateTime]::MinValue
+  Log 'Watchdog started'
+  $tracked = $null
+  $failures = 0
   $lastHealthy = Get-Date
-
   while (-not (Test-Path -LiteralPath $stopFile)) {
-    $nodePath = Resolve-NodePath
-    if (-not $nodePath) {
-      Write-WatchdogLog '未找到 Node.js，30 秒后重试'
-      Start-Sleep -Seconds 30
-      continue
+    if ($tracked -and $tracked.HasExited) {
+      $exitCode = $null
+      try { $exitCode = [int](Get-Content -LiteralPath $exitFile -Raw -ErrorAction Stop) } catch { }
+      $tracked.Dispose()
+      $tracked = $null
+      if ($null -ne $exitCode -and ($exitCode -eq 0 -or $exitCode -eq 2)) {
+        Log "Worker reached terminal state $exitCode; no automatic restart"
+        break
+      }
+      $failures++
+      Log "Worker exited with code $exitCode (failure $failures/3)"
+      if ($failures -ge 3) { Log 'Repeated failures. Manual diagnosis required.'; break }
+      Start-Sleep -Seconds 15
     }
 
-    $procs = @(Get-WatchProcesses)
+    $procs = @(Get-ProjectProcesses)
     if ($procs.Count -eq 0) {
-      if (((Get-Date) - $lastStart).TotalSeconds -lt 15) {
-        Start-Sleep -Seconds 5
-        continue
-      }
-      Start-WatchProcess $nodePath
-      $lastStart = Get-Date
+      if ($tracked -and -not $tracked.HasExited) { Start-Sleep -Seconds 3; continue }
+      $node = Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+      if (-not $node) { Log 'Node not available; stopping watchdog'; break }
+      if (Test-Path -LiteralPath $exitFile) { Remove-Item -LiteralPath $exitFile -Force }
+      Log "Launching project worker: $entryPath"
+      $launchArgs = '"' + $worker + '" "' + $EntryPoint + '"'
+      $tracked = Start-Process -FilePath $node.Source -ArgumentList $launchArgs -WorkingDirectory $dir -WindowStyle Hidden -PassThru
       $lastHealthy = Get-Date
       Start-Sleep -Seconds 8
       continue
@@ -93,23 +66,22 @@ try {
 
     $healthy = $false
     try {
-      $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/api/status" -UseBasicParsing -TimeoutSec 5
-      $healthy = $response.StatusCode -eq 200
-    } catch { $healthy = $false }
-
-    if ($healthy) {
+      $r = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/status" -TimeoutSec 5
+      $healthy = $null -ne $r.phase -and $null -ne $r.startedAt
+    } catch { }
+    if ($healthy) { $lastHealthy = Get-Date }
+    elseif (((Get-Date) - $lastHealthy).TotalSeconds -gt 180) {
+      Log 'Dashboard unresponsive for >180 sec; stopping this project worker'
+      Stop-ProjectProcesses
       $lastHealthy = Get-Date
-    } elseif (((Get-Date) - $lastHealthy).TotalSeconds -gt 180) {
-      Write-WatchdogLog '进度网页超过 180 秒无响应，重启刷课进程'
-      Stop-WatchProcesses
-      Start-Sleep -Seconds 3
     }
-
     Start-Sleep -Seconds 10
   }
-
-  Write-WatchdogLog '收到停止标记，看门狗退出'
+  Log 'Watchdog stopped'
+} catch {
+  Log ('Fatal watchdog error: ' + $_.Exception.Message)
+  throw
 } finally {
-  if ($hasMutex) { $mutex.ReleaseMutex() | Out-Null }
+  if ($locked) { $mutex.ReleaseMutex() | Out-Null }
   $mutex.Dispose()
 }

@@ -4,10 +4,10 @@
 在用户机器上部署并持续运行【超星学习通任务点自动完成工具】，让用户只需提供**超星账号密码**和**课程 URL / 从列表选课**，脚本即可稳定跑完该课程的视频任务点。
 
 ## 给用户的一句话（直接粘贴给我）
-> 在本地部署并运行 https://github.com/zqian6263-design/Chaoxing_Fast 这个项目：安装 Node 18+，运行 setup 完成依赖与 Chromium 浏览器安装，然后用 `node start.mjs` 启动；首次启动时请按提示让我登录超星账号（在弹出页面输入账号密码或扫码），并向我要课程的 URL（或让我用 `--list-courses` 列出后选择）；确认跑通后安装登录自启与看门狗，让脚本持续稳定运行，并保持实时进度网页 `http://127.0.0.1:7788` 可访问。
+> 在本地部署并运行 https://github.com/zqian6263-design/Chaoxing_Fast 这个项目：安装 Node 20+，运行 setup 完成依赖与 Chromium 浏览器安装，然后用 `node start.mjs` 启动；首次启动时请按提示让我登录超星账号（在弹出页面输入账号密码或扫码），并向我要课程的 URL（或让我用 `--list-courses` 列出后选择）；确认跑通后安装登录自启与看门狗，让脚本持续稳定运行，并保持实时进度网页 `http://127.0.0.1:7788` 可访问。
 
 ## 执行步骤
-1. 确认 `node -v >= 18`；若无，安装 Node 18+（或提示用户安装）。
+1. 确认 `node -v >= 20`；若无，安装 Node 20+（或提示用户安装）。
 2. 克隆本仓库并进入目录：
    ```bash
    git clone https://github.com/zqian6263-design/Chaoxing_Fast.git
@@ -45,3 +45,11 @@
 - Windows：双击 `start-windows.bat` 后台启动、安装看门狗并自动打开进度页；`stop-windows.bat` 同时停止刷课与看门狗。
 - 想开机自动运行：运行一次 `install-autostart.ps1`（无需管理员）；`uninstall-autostart.ps1` 取消。
 - 运行过 `install-autostart.ps1` 后，每次登录 Windows 都会自动恢复 `http://127.0.0.1:7788`；看门狗会在进程异常退出或无响应超过 180 秒时自动拉起。诊断日志在 `watchdog.log`。
+
+## 工程化版本注意
+- Node.js **20+** (lockfile-resolved Playwright requires Node 20+); validate with `node doctor.mjs`.
+- On Windows use `install-windows.bat` and then `launch-windows.bat`; autostart requires explicit user opt-in.
+- Never call playback completion successful unless the authoritative course card confirms the exact task's `isPassed === true`.
+- Do not use real user credentials in automated tests; use the offline `npm test` suite.
+- Treat interface-based progress reporting as experimental and outside the deployment acceptance criteria.
+- See `docs/RELIABILITY.md` for user safety and current limitations.
