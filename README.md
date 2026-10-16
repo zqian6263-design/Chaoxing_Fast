@@ -20,7 +20,7 @@
 
 > **工程化修复版说明（分支 `fix/stability-portability-20261016`）**：视频达到设定播放比例不等于课程任务已经完成；仅当平台任务卡明确确认 `isPassed` 时计入成功。课程规则、风控或平台变更可能使自动化失败。详情见 [可靠性与部署规范](docs/RELIABILITY.md)。\n\n## Windows 跨电脑安装（新）\n\n下载本分支发布的 Windows 在线安装包 ZIP 并解压，双击 `install-windows.bat`（首次需联网，会安装运行依赖和 Chromium），随后双击 `launch-windows.bat` 进行交互式登录与课程选择。无需管理员权限；没有 Node.js 的电脑会下载并验证 Node.js 官方便携版。首次运行**不默认开启开机自启**，通过 `node doctor.mjs` 可检查依赖。\n\n**目前未完成真实平台验收；不要以本地日志代替学校平台成绩。**\n\n## AI 学习辅导（开发分支）
 
-在本机执行 `npm run quiz`，打开 http://127.0.0.1:7789 ，可以只读扫描章节测验，并接入 Google Gemini 免费层模型（需在 Google AI Studio 创建 Free-tier 项目 API Key）生成知识点和解题思路讲解。**无自动答题提交**，仅在手动粘贴题目并点击后请求 API。详见 [使用及安全说明](docs/QUIZ_ASSISTANT.md)。
+在本机执行 `npm run quiz`，打开 http://127.0.0.1:7789 ，可以只读扫描章节测验，并接入 DeepSeek API（deepseek-flash，按 Token 计费，需主动确认）生成知识点和解题思路讲解。**无自动答题提交**，仅在手动粘贴题目并点击后请求 API。详见 [使用及安全说明](docs/QUIZ_ASSISTANT.md)。
 
 ## ✨ 特性
 

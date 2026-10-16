@@ -1,25 +1,22 @@
 /**
- * Gemini API study-tutor adapter: manual requests, fixed free-tier-eligible model.
- * No automatic retries, paid-model fallback or Chaoxing session forwarding.
- * A Google project must be verified as Free tier in AI Studio; this code
- * cannot determine the billing tier of an arbitrary API key.
+ * DeepSeek API adapter: manual study explanations using the lower-cost Flash model.
+ * API usage is billed by DeepSeek; the dashboard requires explicit acknowledgement.
+ * No Chaoxing session cookies or automatic retries are sent to the provider.
  */
-export const GEMINI_MODEL = 'gemini-2.5-flash-lite';
-export const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent';
+export const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions';
+export const DEEPSEEK_MODEL = 'deepseek-flash';
 
 const SYSTEM = `你是课程学习辅导助手，不是自动提交测验的工具。
-回答必须包括：1.本题考查的概念 2.逐项分析和推理 3.如何利用课程资料核对 4.不确定性/缺失条件。
-仅根据用户明确提供的题目及课程笔记进行分析，不要声称访问过学习通、成绩系统或老师的答案。
-课程资料为空时直说未提供材料。题意不清、图片缺失时请请求补充，禁止编造依据。
-不要提供任何自动提交、批量作答或绕过考试限制的步骤。`;
+请说明：1.题目考查的知识点 2.逐项分析和推理 3.如何根据课程资料自行核对 4.不确定性和缺失条件。
+只依据用户明确提供的题目与笔记，不要声称访问学习通、成绩系统或标准答案。
+若缺少资料请如实说明，遇到图像或题意不完整时请求补充。
+不要执行自动填答、批量提交或其他更改测验状态的操作。`;
 
-export function validateText(value, name, max) {
-  if (typeof value !== 'string' || !value.trim() || value.length > max) {
-    throw new TypeError(name + ' 必须是 1–' + max + ' 字的文本');
+function textInput(value, label, maxLength) {
+  if (typeof value !== 'string' || !value.trim() || value.length > maxLength) {
+    throw new TypeError(label + ' 必须是 1–' + maxLength + ' 字的文本');
   }
-  // The study input must not contain secrets or credential headers.
-  if (/(?:cookie\s*:|authorization\s*:|bearer\s+\S+|(?:GEMINI|GOOGLE|OPENCODE)_API_KEY\s*=|AIza[0-9A-Za-z_-]{20,})/i.test(value)) {
+  if (/(?:cookie\s*:|authorization\s*:|bearer\s+\S+|(?:DEEPSEEK|GEMINI|GOOGLE|OPENCODE)_API_KEY\s*=|AIza[0-9A-Za-z_-]{20,})/i.test(value)) {
     throw new TypeError('检测到疑似凭据，请删除后再发送');
   }
   return value.trim();
@@ -28,56 +25,61 @@ export function validateText(value, name, max) {
 export async function explainQuiz({ question, notes = '' }, {
   apiKey, fetchImpl = fetch, timeoutMs = 30000,
 } = {}) {
-  const q = validateText(question, '题干', 8000);
+  const q = textInput(question, '题干', 8000);
   if (typeof notes !== 'string' || notes.length > 12000) {
     throw new TypeError('课程笔记不能超过 12000 字');
   }
-  if (notes.trim()) validateText(notes, '课程笔记', 12000);
-  if (typeof apiKey !== 'string' || !apiKey.trim()) throw new Error('未配置 Gemini API Key');
+  if (notes.trim()) textInput(notes, '课程笔记', 12000);
+  if (typeof apiKey !== 'string' || !apiKey.trim()) throw new Error('未配置 DEEPSEEK_API_KEY');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {
     throw new TypeError('不允许的请求超时时间');
   }
-  const body = {
-    systemInstruction: { parts: [{ text: SYSTEM }] },
-    contents: [{ role: 'user', parts: [{ text: JSON.stringify({ question: q, course_notes: notes.trim() }) }] }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 1400 },
-  };
-  // This client explicitly sends only one POST to one allowlisted model.
-  const response = await fetchImpl(GEMINI_ENDPOINT, {
+
+  const response = await fetchImpl(DEEPSEEK_ENDPOINT, {
     method: 'POST',
     headers: {
-      'x-goog-api-key': apiKey.trim(),
+      Authorization: 'Bearer ' + apiKey.trim(),
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
     signal: AbortSignal.timeout(timeoutMs),
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      model: DEEPSEEK_MODEL,
+      messages: [
+        { role: 'system', content: SYSTEM },
+        { role: 'user', content: JSON.stringify({ question: q, course_notes: notes.trim() }) },
+      ],
+      // Disable extended thinking to keep cost and latency bounded for tutorial hints.
+      thinking: { type: 'disabled' },
+      stream: false,
+      max_tokens: 700,
+    }),
   });
   if (!response.ok) {
-    // Do not include provider response bodies; they might echo sensitive input.
-    const descriptions = {
-      400: '（请求格式错误）',
-      401: '（身份验证失败）',
-      403: '（项目权限不足、模型不可用或地区受限）',
-      404: '（模型在当前项目不可用）',
-      429: '（已达到免费配额或速率限制）',
+    const messages = {
+      400: '（请求参数错误）',
+      401: '（API Key 无效）',
+      402: '（账户余额不足或未启用 API 服务）',
+      403: '（服务端权限或地区限制）',
+      429: '（请求触发限流）',
     };
-    throw new Error('Gemini API HTTP ' + response.status + (descriptions[response.status] || ''));
+    throw new Error('DeepSeek API HTTP ' + response.status + (messages[response.status] || ''));
   }
+  // Do not log the provider body: it can contain user-provided study material.
   const raw = await response.text();
   if (raw.length > 1_000_000) throw new Error('模型响应超过大小限制');
   let data;
   try { data = JSON.parse(raw); }
   catch { throw new Error('模型返回的不是有效 JSON'); }
-  const answer = (data?.candidates?.[0]?.content?.parts || [])
-    .map(p => typeof p?.text === 'string' ? p.text : '')
-    .filter(Boolean)
-    .join('\n');
-  if (!answer.trim()) {
-    const finish = data?.candidates?.[0]?.finishReason;
-    throw new Error(finish === 'SAFETY'
-      ? 'Gemini 安全策略阻止了此次响应'
-      : 'Gemini 未返回可用的讲解文本');
-  }
-  return { model: GEMINI_MODEL, provider: 'Google Gemini', explanation: answer.trim().slice(0, 16000) };
+  const answer = data?.choices?.[0]?.message?.content;
+  if (typeof answer !== 'string' || !answer.trim()) throw new Error('模型未返回可用的讲解文本');
+  return {
+    provider: 'DeepSeek',
+    model: DEEPSEEK_MODEL,
+    explanation: answer.trim().slice(0, 16000),
+    usage: {
+      inputTokens: Number.isFinite(data.usage?.prompt_tokens) ? data.usage.prompt_tokens : null,
+      outputTokens: Number.isFinite(data.usage?.completion_tokens) ? data.usage.completion_tokens : null,
+    },
+  };
 }

@@ -17,9 +17,9 @@ a{color:#155eef} @media(max-width:680px){.grid{grid-template-columns:1fr} main{m
 </head><body><main>
 <header><h1>学习通 · AI 学习辅导</h1><p>测验清单与学习解释。不会自动填入答案，也不会自动提交。</p><span class="status" id="health">检查服务中…</span> <a href="http://127.0.0.1:7788" rel="noreferrer">视频进度页面 ↗</a></header>
 <section class="panel"><h2>1. 连接免费模型</h2>
-<p>从 <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noreferrer">Google AI Studio → API Keys</a> 创建或查看密钥（需你自己的 Google 账户授权）。在 AI Studio 的 Projects / Billing 确认该项目是 <strong>Free tier，未启用付费结算</strong>；免费层模型固定为 <strong>gemini-2.5-flash-lite</strong>。密钥仅保存在本地服务内存中，退出即清除。<strong>注意：免费模型在付费项目中仍可能产生账单。</strong></p>
-<label for="key">Google Gemini API Key</label><input id="key" type="password" autocomplete="off" placeholder="在 Google AI Studio 创建，粘贴后仅存内存" />
-<label style="display:flex;align-items:center;gap:8px;font-weight:normal"><input style="width:auto" type="checkbox" id="free-tier-confirmed" />我已经在 Google AI Studio 核实该密钥所属项目为 Free tier，且未启用付费结算。</label>
+<p>使用 <a href="https://platform.deepseek.com/" target="_blank" rel="noreferrer">DeepSeek 官方开放平台</a> 的 API Key，固定调用低成本 <strong>deepseek-flash</strong>。<strong>DeepSeek API 按 Token 计费，不是免费 API</strong>。本地如已设置 DEEPSEEK_API_KEY，无需再次粘贴。密钥只存于本地进程内存或已有系统环境中，不写入项目文件。每次服务启动最多允许 20 次手动讲解，无自动重试、无付费 Pro 模型回退。</p>
+<label for="key">DeepSeek API Key（系统环境变量已有则可留空）</label><input id="key" type="password" autocomplete="off" placeholder="已有 DEEPSEEK_API_KEY 可留空，否则粘贴密钥" />
+<label style="display:flex;align-items:center;gap:8px;font-weight:normal"><input style="width:auto" type="checkbox" id="billing-acknowledged" />我了解 DeepSeek API 按量收费，只会手动发起讲解请求。</label>
 <button id="save-key">本次会话启用</button><button class="secondary" id="clear-key">清除已启用密钥</button>
 <div class="muted" id="key-status">尚未配置</div></section>
 <section class="panel"><h2>2. 只读扫描章节测验</h2>
@@ -30,7 +30,7 @@ a{color:#155eef} @media(max-width:680px){.grid{grid-template-columns:1fr} main{m
 </div><button id="scan">扫描课程测验</button><div class="muted" id="scan-status">尚未扫描</div><ul id="tasks"></ul>
 </section>
 <section class="panel"><h2>3. 获取知识点讲解</h2>
-<p>请自行复制题干及选项。只有点击“生成讲解”才会将以下文本发送到 Google Gemini API；不要粘贴账号、Cookie 或任何敏感信息。AI 可能出错，请结合课程资料核对。</p>
+<p>请自行复制题干及选项。只有点击“生成讲解”才会将以下文本发送到 DeepSeek API；不要粘贴账号、Cookie 或任何敏感信息。AI 可能出错，请结合课程资料核对。</p>
 <label for="question">题干与选项</label><textarea id="question" rows="7" maxlength="8000" placeholder="粘贴一道题及全部选项（可不提供标准答案）"></textarea>
 <label for="notes">相关课程资料（可选）</label><textarea id="notes" rows="4" maxlength="12000" placeholder="粘贴课堂笔记、教材摘录或相关概念"></textarea>
 <button id="explain">生成知识点与推理讲解</button><div class="muted" id="explain-status">单次点击请求，最多 20 次 / 本次运行</div>

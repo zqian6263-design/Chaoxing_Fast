@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { explainQuiz, GEMINI_MODEL } from './provider.mjs';
+import { explainQuiz, DEEPSEEK_MODEL } from './provider.mjs';
 import { scanConfiguredCourse } from './scan.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -17,8 +17,8 @@ const port = Number(process.env.STUDY_PORT || '7789');
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid STUDY_PORT');
 const origin = 'http://127.0.0.1:' + port;
 const csrf = randomBytes(24).toString('hex');
-let apiKey = '';
-let freeTierConfirmed = false;
+let apiKey = process.env.DEEPSEEK_API_KEY || '';
+let billingAcknowledged = false;
 let busy = false;
 let scanning = false;
 let requests = 0;
@@ -73,8 +73,9 @@ const server = createServer(async (req, res) => {
       headers(res, 'text/javascript; charset=utf-8'); res.end(js); return;
     }
     if (req.method === 'GET' && url.pathname === '/api/health') {
-      sendJson(res, 200, { ok: true, provider: 'Google Gemini',
-        model: GEMINI_MODEL, keyConfigured: Boolean(apiKey), billingTierVerifiedByUser: freeTierConfirmed,
+      sendJson(res, 200, { ok: true, provider: 'DeepSeek',
+        model: DEEPSEEK_MODEL, keyConfigured: Boolean(apiKey), enabled: Boolean(apiKey && billingAcknowledged),
+        environmentKeyAvailable: Boolean(process.env.DEEPSEEK_API_KEY),
         explainBusy: busy, scanBusy: scanning, used: requests, sessionLimit: maxRequests,
         note: 'Key is kept in memory only; no automatic submission.' }); return;
     }
@@ -83,20 +84,22 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === '/api/key') {
       const payload = await readJson(req);
-      if (typeof payload?.apiKey !== 'string' || payload.apiKey.trim().length < 12 ||
-          payload.apiKey.trim().length > 512) throw Object.assign(new Error('API Key 格式不正确'), { status: 400 });
-      if (payload.freeTierConfirmed !== true) throw Object.assign(new Error('请先确认 Google AI Studio 项目属于 Free tier，且未开通计费。'), { status: 400 });
-      apiKey = payload.apiKey.trim();
-      freeTierConfirmed = true;
+      if (payload?.billingAcknowledged !== true) throw Object.assign(new Error('DeepSeek API 按量计费，请先确认已知晓可能扣费。'), { status: 400 });
+      const submitted = typeof payload.apiKey === 'string' ? payload.apiKey.trim() : '';
+      if (submitted && (submitted.length < 12 || submitted.length > 512)) throw Object.assign(new Error('API Key 格式不正确'), { status: 400 });
+      const chosenKey = submitted || process.env.DEEPSEEK_API_KEY || '';
+      if (!chosenKey) throw Object.assign(new Error('未找到 DEEPSEEK_API_KEY，请先在此页面粘贴密钥'), { status: 400 });
+      apiKey = chosenKey;
+      billingAcknowledged = true;
       sendJson(res, 200, { ok: true }); return;
     }
     if (url.pathname === '/api/clear-key') {
       apiKey = '';
-      freeTierConfirmed = false;
+      billingAcknowledged = false;
       sendJson(res, 200, { ok: true }); return;
     }
     if (url.pathname === '/api/explain') {
-      if (!apiKey || !freeTierConfirmed) { sendJson(res, 503, { error: '请先在页面中配置 Gemini 免费项目的 API Key，并确认其未启用计费' }); return; }
+      if (!apiKey || !billingAcknowledged) { sendJson(res, 503, { error: '请在本地页面启用 DeepSeek API 并确认已知晓按量计费' }); return; }
       if (busy) { sendJson(res, 429, { error: '上一条讲解请求尚未结束' }); return; }
       if (requests >= maxRequests) { sendJson(res, 429, { error: '本次运行已达到 20 次请求上限，避免意外超额' }); return; }
       const body = await readJson(req);
@@ -125,7 +128,7 @@ const server = createServer(async (req, res) => {
   } catch (error) {
     const status = error?.status && Number.isInteger(error.status) ? error.status : 500;
     const display = status === 500
-      ? (String(error.message).startsWith('Gemini API HTTP') || /未登录|章节|课程配置|题干|课程笔记|未配置|请求超时|模型/.test(error.message)
+      ? (String(error.message).startsWith('DeepSeek API HTTP') || /未登录|章节|课程配置|题干|课程笔记|未配置|请求超时|模型/.test(error.message)
         ? String(error.message).slice(0, 160) : '请求失败，请检查网络及本地诊断信息')
       : String(error.message).slice(0, 160);
     if (!res.headersSent) sendJson(res, status, { error: display });
@@ -134,6 +137,6 @@ const server = createServer(async (req, res) => {
 });
 server.listen(port, '127.0.0.1', () => {
   console.log('AI study helper: ' + origin);
-  console.log('Gemini key: ' + (apiKey ? 'configured' : 'not yet configured'));
+  console.log('DeepSeek API Key: ' + (apiKey ? 'present' : 'not available') + ' (API requests disabled until user confirms billing)');
   console.log('Video playback remains independent at http://127.0.0.1:7788');
 });
