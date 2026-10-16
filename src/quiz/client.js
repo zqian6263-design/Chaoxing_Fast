@@ -13,8 +13,8 @@ async function health() {
   try {
     const response = await fetch('/api/health', {cache:'no-store'});
     const status = await response.json();
-    setText('health', '本地服务在线 · '+status.provider+' · 免费模型 '+status.model+' · '+(status.keyConfigured?'密钥已配置':'未配置密钥'));
-    setText('key-status', status.keyConfigured ? '已在本次会话启用密钥（不会显示或保存）' : '尚未配置 API Key');
+    setText('health', '本地服务在线 · '+status.provider+' · 免费层可用模型 '+status.model+' · '+(status.keyConfigured?'密钥已配置':'未配置密钥'));
+    setText('key-status', status.keyConfigured ? '已在本次会话启用密钥（不会显示或保存）；Free tier 由用户确认，程序无法验证账单归属' : '尚未配置 Gemini API Key；请先确认项目为 Free tier');
     setText('explain-status', '本次会话已请求 '+status.used+' / '+status.sessionLimit);
   } catch(e) { setText('health', '服务不可用：'+e.message); }
 }
@@ -22,11 +22,11 @@ function busy(button, state) { $(button).disabled = state; }
 $('save-key').addEventListener('click', async () => {
   const apiKey = $('key').value.trim();
   busy('save-key', true);
-  try { await jsonPost('/api/key',{apiKey}); $('key').value=''; await health(); }
+  try { await jsonPost('/api/key',{apiKey,freeTierConfirmed:$('free-tier-confirmed').checked}); $('key').value=''; await health(); }
   catch(e){setText('key-status', e.message);}finally{busy('save-key',false);}
 });
 $('clear-key').addEventListener('click', async () => {
-  try {await jsonPost('/api/clear-key', {});$('key').value='';await health();}
+  try {await jsonPost('/api/clear-key', {});$('key').value='';$('free-tier-confirmed').checked=false;await health();}
   catch(e){setText('key-status',e.message);}
 });
 $('explain').addEventListener('click', async () => {

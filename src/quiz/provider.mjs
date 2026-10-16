@@ -1,11 +1,12 @@
 /**
- * OpenCode Zen study-assistant adapter.
- * Explicit user invocation only; never sends Chaoxing cookies or course links.
- * Only the allowlisted free model is reachable; paid-model fallback is forbidden.
+ * Gemini API study-tutor adapter: manual requests, fixed free-tier-eligible model.
+ * No automatic retries, paid-model fallback or Chaoxing session forwarding.
+ * A Google project must be verified as Free tier in AI Studio; this code
+ * cannot determine the billing tier of an arbitrary API key.
  */
-export const ZEN_ENDPOINT = 'https://opencode.ai/zen/v1/chat/completions';
-export const CONSOLE_ENDPOINT = 'https://opencode.ai/inference/openai/v1/chat/completions';
-export const FREE_ZEN_MODEL = 'mimo-v2.6-flash-free';
+export const GEMINI_MODEL = 'gemini-2.5-flash-lite';
+export const GEMINI_ENDPOINT =
+  'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent';
 
 const SYSTEM = `你是课程学习辅导助手，不是自动提交测验的工具。
 回答必须包括：1.本题考查的概念 2.逐项分析和推理 3.如何利用课程资料核对 4.不确定性/缺失条件。
@@ -13,54 +14,70 @@ const SYSTEM = `你是课程学习辅导助手，不是自动提交测验的工�
 课程资料为空时直说未提供材料。题意不清、图片缺失时请请求补充，禁止编造依据。
 不要提供任何自动提交、批量作答或绕过考试限制的步骤。`;
 
-function validateText(value, name, max) {
+export function validateText(value, name, max) {
   if (typeof value !== 'string' || !value.trim() || value.length > max) {
     throw new TypeError(name + ' 必须是 1–' + max + ' 字的文本');
   }
-  if (/\b(?:Cookie:|Authorization:|Bearer\s+\S+|OPENCODE_API_KEY\s*=)/i.test(value)) {
+  // The study input must not contain secrets or credential headers.
+  if (/(?:cookie\s*:|authorization\s*:|bearer\s+\S+|(?:GEMINI|GOOGLE|OPENCODE)_API_KEY\s*=|AIza[0-9A-Za-z_-]{20,})/i.test(value)) {
     throw new TypeError('检测到疑似凭据，请删除后再发送');
   }
   return value.trim();
 }
 
-export async function explainQuiz({ question, notes = '' }, { apiKey, fetchImpl = fetch, timeoutMs = 30000 } = {}) {
+export async function explainQuiz({ question, notes = '' }, {
+  apiKey, fetchImpl = fetch, timeoutMs = 30000,
+} = {}) {
   const q = validateText(question, '题干', 8000);
-  if (typeof notes !== 'string' || notes.length > 12000) throw new TypeError('课程笔记不能超过 12000 字');
-  if (notes) validateText(notes, '课程笔记', 12000);
-  if (!apiKey || typeof apiKey !== 'string') throw new Error('未配置 OpenCode Zen API Key');
-  if (timeoutMs < 1000 || timeoutMs > 60000) throw new TypeError('不允许的请求超时时间');
-
-  // oc_sk_ is a Console service-account key, NOT a legacy Zen key.
-  // Route only to the official endpoints and keep the model fixed to a free ID.
-  const consoleKey = apiKey.startsWith('oc_sk_');
-  const endpoint = consoleKey ? CONSOLE_ENDPOINT : ZEN_ENDPOINT;
-  const response = await fetchImpl(endpoint, {
+  if (typeof notes !== 'string' || notes.length > 12000) {
+    throw new TypeError('课程笔记不能超过 12000 字');
+  }
+  if (notes.trim()) validateText(notes, '课程笔记', 12000);
+  if (typeof apiKey !== 'string' || !apiKey.trim()) throw new Error('未配置 Gemini API Key');
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {
+    throw new TypeError('不允许的请求超时时间');
+  }
+  const body = {
+    systemInstruction: { parts: [{ text: SYSTEM }] },
+    contents: [{ role: 'user', parts: [{ text: JSON.stringify({ question: q, course_notes: notes.trim() }) }] }],
+    generationConfig: { temperature: 0.2, maxOutputTokens: 1400 },
+  };
+  // This client explicitly sends only one POST to one allowlisted model.
+  const response = await fetchImpl(GEMINI_ENDPOINT, {
     method: 'POST',
     headers: {
-      Authorization: 'Bearer ' + apiKey,
+      'x-goog-api-key': apiKey.trim(),
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
     signal: AbortSignal.timeout(timeoutMs),
-    body: JSON.stringify({
-      model: FREE_ZEN_MODEL,
-      stream: false,
-      messages: [
-        { role: 'system', content: SYSTEM },
-        { role: 'user', content: JSON.stringify({ question: q, course_notes: notes.trim() }, null, 0) },
-      ],
-    }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) {
-    // Never print response bodies: third-party error responses can echo user text/credentials.
-    throw new Error('OpenCode API HTTP ' + response.status + (response.status === 403 ? '（服务器拒绝请求，请检查 Console 推理权限、工作区策略或模型访问限制）' : response.status === 401 ? '（密钥无效或已撤销）' : response.status === 429 ? '（限额或限流）' : ''));
+    // Do not include provider response bodies; they might echo sensitive input.
+    const descriptions = {
+      400: '（请求格式错误）',
+      401: '（身份验证失败）',
+      403: '（项目权限不足、模型不可用或地区受限）',
+      404: '（模型在当前项目不可用）',
+      429: '（已达到免费配额或速率限制）',
+    };
+    throw new Error('Gemini API HTTP ' + response.status + (descriptions[response.status] || ''));
   }
   const raw = await response.text();
   if (raw.length > 1_000_000) throw new Error('模型响应超过大小限制');
   let data;
   try { data = JSON.parse(raw); }
   catch { throw new Error('模型返回的不是有效 JSON'); }
-  const answer = data?.choices?.[0]?.message?.content;
-  if (typeof answer !== 'string' || !answer.trim()) throw new Error('模型未返回可用的讲解文本');
-  return { model: FREE_ZEN_MODEL, provider: consoleKey ? 'OpenCode Console' : 'OpenCode Zen', explanation: answer.trim().slice(0, 16000) };
+  const answer = (data?.candidates?.[0]?.content?.parts || [])
+    .map(p => typeof p?.text === 'string' ? p.text : '')
+    .filter(Boolean)
+    .join('\n');
+  if (!answer.trim()) {
+    const finish = data?.candidates?.[0]?.finishReason;
+    throw new Error(finish === 'SAFETY'
+      ? 'Gemini 安全策略阻止了此次响应'
+      : 'Gemini 未返回可用的讲解文本');
+  }
+  return { model: GEMINI_MODEL, provider: 'Google Gemini', explanation: answer.trim().slice(0, 16000) };
 }

@@ -1,49 +1,50 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { explainQuiz, ZEN_ENDPOINT, CONSOLE_ENDPOINT, FREE_ZEN_MODEL } from '../src/quiz/provider.mjs';
+import { explainQuiz, GEMINI_ENDPOINT, GEMINI_MODEL } from '../src/quiz/provider.mjs';
 import { extractQuizCards, scanQuizzes } from '../src/quiz/scan.mjs';
 
-test('provider accepts only explicitly declared free model, never leaks Cookie or keys into prompt', async () => {
-  let calls = 0;
-  const fetchImpl = async (url, request) => {
-    calls++;
-    assert.equal(url, ZEN_ENDPOINT);
-    assert.equal(request.method, 'POST');
-    assert.equal(request.headers.Authorization, 'Bearer test-secret-key');
-    const data = JSON.parse(request.body);
-    assert.equal(data.model, FREE_ZEN_MODEL);
-    assert.equal(data.messages.length, 2);
-    assert.ok(!request.body.includes('test-secret-key'));
-    assert.ok(!request.body.includes('cookies.json'));
-    assert.equal(data.stream, false);
-    return {ok:true, text:async()=>JSON.stringify({choices:[{message:{content:'应先理解概念，并根据课程材料核对。'}}]})};
-  };
-  const result = await explainQuiz({question:'以下哪个陈述符合课堂定义？\nA.甲\nB.乙'},
-    {apiKey:'test-secret-key',fetchImpl});
-  assert.equal(result.model, FREE_ZEN_MODEL);
-  assert.match(result.explanation, /概念/);
-  assert.equal(calls,1);
-});
-test('Console service-account keys use the Console inference URL and never a paid fallback', async () => {
-  let called = false;
-  const response = await explainQuiz({question:'什么是机会成本？'}, {apiKey:'oc_sk_test-example',fetchImpl:async (url, opts) => {
-    called = true;
-    assert.equal(url, CONSOLE_ENDPOINT);
+test('Gemini adapter sends only one POST to free-tier-eligible model, no secret in prompt', async () => {
+  let count = 0;
+  const fakeFetch = async (url, opts) => {
+    count++;
+    assert.equal(url, GEMINI_ENDPOINT);
+    assert.equal(opts.method, 'POST');
+    assert.equal(opts.headers['x-goog-api-key'], 'fake-google-key');
+    assert.ok(!opts.body.includes('fake-google-key'));
+    assert.ok(!opts.body.includes('cookies.json'));
     const body = JSON.parse(opts.body);
-    assert.equal(body.model, FREE_ZEN_MODEL);
-    assert.ok(!opts.body.includes('oc_sk_test-example'));
-    return {ok:true,text:async()=>JSON.stringify({choices:[{message:{content:'课程概念解释'}}]})};
-  }});
-  assert.ok(called);
-  assert.equal(response.provider,'OpenCode Console');
+    assert.equal(body.contents.length, 1);
+    assert.equal(body.contents[0].role, 'user');
+    assert.equal(body.generationConfig.maxOutputTokens, 1400);
+    return {ok:true, text:async()=>JSON.stringify({candidates:[{content:{parts:[{text:'本题主要考查机会成本的概念'},{text:'课程材料尚未提供'}]}}]})};
+  };
+  const result = await explainQuiz({question:'什么是机会成本？',notes:'请解释替代方案'}, {
+    apiKey:'fake-google-key', fetchImpl:fakeFetch,
+  });
+  assert.equal(count,1);
+  assert.equal(result.model, GEMINI_MODEL);
+  assert.equal(result.provider, 'Google Gemini');
+  assert.match(result.explanation, /课程材料尚未提供/);
+  assert.match(GEMINI_ENDPOINT, /generativelanguage.googleapis.com\/v1beta\/models\/gemini-2.5-flash-lite:generateContent/);
 });
-test('provider fails closed on credential-looking questions and malformed data', async () => {
-  await assert.rejects(explainQuiz({question:'Cookie: session=hello'}, {apiKey:'test-secret-key'}), /疑似凭据/);
-  await assert.rejects(explainQuiz({question:' '}, {apiKey:'test-secret-key'}), /题干/);
-  await assert.rejects(explainQuiz({question:'请解释原因'}, {apiKey:''}), /API Key/);
-  await assert.rejects(explainQuiz({question:'请解释原因'}, {apiKey:'test-secret-key',
-    fetchImpl:async()=>({ok:false,status:429,text:async()=>''})}), /429/);
+
+test('Gemini provider fails closed for invalid inputs, forbidden secrets, quota, or safety blocks', async () => {
+  const mock = {apiKey:'fake-google-key'};
+  await assert.rejects(explainQuiz({question:'Cookie: session=abc'},mock),/疑似凭据/);
+  await assert.rejects(explainQuiz({question:'AIzaFAKESECRET0123456789012345'},mock),/疑似凭据/);
+  await assert.rejects(explainQuiz({question:' '},mock),/题干/);
+  await assert.rejects(explainQuiz({question:'请解释原因'},{apiKey:''}),/Gemini API Key/);
+  await assert.rejects(explainQuiz({question:'请解释原因'},{
+    ...mock,fetchImpl:async()=>({ok:false,status:429,text:async()=>''}),
+  }),/429/);
+  await assert.rejects(explainQuiz({question:'请解释原因'},{
+    ...mock,fetchImpl:async()=>({ok:false,status:403,text:async()=>''}),
+  }),/403/);
+  await assert.rejects(explainQuiz({question:'请解释原因'},{
+    ...mock,fetchImpl:async()=>({ok:true,text:async()=>JSON.stringify({candidates:[{finishReason:'SAFETY'}]})}),
+  }),/安全策略/);
 });
+
 test('quiz card parser reads only structural quiz metadata', () => {
   const html='<script>var mArg = '+JSON.stringify({attachments:[
     {type:'video',jobid:'video',isPassed:true,property:{name:'video'}},
@@ -58,6 +59,7 @@ test('quiz card parser reads only structural quiz metadata', () => {
   assert.ok(!JSON.stringify(r).includes('secret prompt'));
   assert.deepEqual(extractQuizCards('<html>login</html>','p1',0),{valid:false,tasks:[]});
 });
+
 test('read-only course scanner never makes POST and deduplicates quiz tasks', async () => {
   const requests=[];
   const html='<li><span id="cur101"></span><a class="clicktitle">一章一节</a><div class="knowledgeJobCount" value="2"></div></li>'+
@@ -76,5 +78,5 @@ test('read-only course scanner never makes POST and deduplicates quiz tasks', as
   assert.equal(result.scannedCards,6);
   assert.equal(requests.length,7);
   assert.equal(result.partialScan,true);
-  await assert.rejects(scanQuizzes({course:{courseId:'no',clazzId:'22',cpi:'33'},cookie:'test-cookie'}), /无效/);
+  await assert.rejects(scanQuizzes({course:{courseId:'no',clazzId:'22',cpi:'33'},cookie:'test-cookie'}),/无效/);
 });
