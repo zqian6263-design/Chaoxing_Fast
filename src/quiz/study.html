@@ -12,11 +12,11 @@ label{font-weight:600;display:block;margin-top:12px;margin-bottom:6px}input,text
 .out{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.85;border-left:3px solid #9bbaf9;padding:12px 16px;background:#f6f8fc;border-radius:6px;min-height:55px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px} .grid input{max-width:160px}
 #tasks{padding:0;list-style:none}#tasks li{padding:9px 3px;border-bottom:1px solid #e4e7ec}
-a{color:#155eef} @media(max-width:680px){.grid{grid-template-columns:1fr} main{margin:20px auto}}
+a{color:#155eef}.quiz-question{background:#f9fafb;border:1px solid #e4e7ec;border-radius:12px;padding:14px;margin-top:14px}.quiz-question .preview{width:100%;max-width:720px;height:auto;border:1px solid #cbd5e1;border-radius:6px;margin:10px 0}.quiz-question textarea{margin:8px 0}.quiz-question .warning{color:#b54708;font-size:13px;margin-top:6px}.quiz-select{display:flex;gap:8px;align-items:center;font-weight:normal}.quiz-select input{width:auto} @media(max-width:680px){.grid{grid-template-columns:1fr} main{margin:20px auto}}
 </style>
 </head><body><main>
 <header><h1>学习通 · AI 学习辅导</h1><p>测验清单与学习解释。不会自动填入答案，也不会自动提交。</p><span class="status" id="health">检查服务中…</span> <a href="http://127.0.0.1:7788" rel="noreferrer">视频进度页面 ↗</a></header>
-<section class="panel"><h2>1. 连接免费模型</h2>
+<section class="panel"><h2>1. 连接 DeepSeek 模型</h2>
 <p>使用 <a href="https://platform.deepseek.com/" target="_blank" rel="noreferrer">DeepSeek 官方开放平台</a> 的 API Key，固定调用低成本 <strong>deepseek-flash</strong>。<strong>DeepSeek API 按 Token 计费，不是免费 API</strong>。本地如已设置 DEEPSEEK_API_KEY，无需再次粘贴。密钥只存于本地进程内存或已有系统环境中，不写入项目文件。每次服务启动最多允许 20 次手动讲解，无自动重试、无付费 Pro 模型回退。</p>
 <label for="key">DeepSeek API Key（系统环境变量已有则可留空）</label><input id="key" type="password" autocomplete="off" placeholder="已有 DEEPSEEK_API_KEY 可留空，否则粘贴密钥" />
 <label style="display:flex;align-items:center;gap:8px;font-weight:normal"><input style="width:auto" type="checkbox" id="billing-acknowledged" />我了解 DeepSeek API 按量收费，只会手动发起讲解请求。</label>
@@ -29,7 +29,13 @@ a{color:#155eef} @media(max-width:680px){.grid{grid-template-columns:1fr} main{m
 <div><label for="cards">每知识点扫描卡片（1–7）</label><input id="cards" type="number" min="1" max="7" value="4" /></div>
 </div><button id="scan">扫描课程测验</button><div class="muted" id="scan-status">尚未扫描</div><ul id="tasks"></ul>
 </section>
-<section class="panel"><h2>3. 获取知识点讲解</h2>
+<section class="panel"><h2>3. 自动读取测验题目（只读）</h2>
+<p>先点击上方“扫描课程测验”，再点击对应知识点的“读取题目”。读取时浏览器只允许 GET / HEAD，不会点击作答按钮、保存或提交。检测到字体混淆时，将显示本机渲染的题目截图供核对；截图不会上传给 AI。</p>
+<div class="muted" id="question-status">尚未读取题目</div>
+<div id="question-cards"></div>
+<button id="batch-copy" class="secondary">合并选中的题目到讲解框（最多 3 题）</button>
+</section>
+<section class="panel"><h2>4. 获取知识点讲解</h2>
 <p>请自行复制题干及选项。只有点击“生成讲解”才会将以下文本发送到 DeepSeek API；不要粘贴账号、Cookie 或任何敏感信息。AI 可能出错，请结合课程资料核对。</p>
 <label for="question">题干与选项</label><textarea id="question" rows="7" maxlength="8000" placeholder="粘贴一道题及全部选项（可不提供标准答案）"></textarea>
 <label for="notes">相关课程资料（可选）</label><textarea id="notes" rows="4" maxlength="12000" placeholder="粘贴课堂笔记、教材摘录或相关概念"></textarea>

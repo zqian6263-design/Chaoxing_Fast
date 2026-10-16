@@ -11,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { explainQuiz, DEEPSEEK_MODEL } from './provider.mjs';
 import { scanConfiguredCourse } from './scan.mjs';
+import { readQuizQuestions } from './reader.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.STUDY_PORT || '7789');
@@ -21,6 +22,7 @@ let apiKey = process.env.DEEPSEEK_API_KEY || '';
 let billingAcknowledged = false;
 let busy = false;
 let scanning = false;
+let reading = false;
 let requests = 0;
 const maxRequests = 20;
 
@@ -34,7 +36,7 @@ function headers(res, type, status = 200) {
     'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
-    'Content-Security-Policy': "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; img-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    'Content-Security-Policy': "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
   });
 }
 function sendJson(res, status, data) {
@@ -76,7 +78,7 @@ const server = createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, provider: 'DeepSeek',
         model: DEEPSEEK_MODEL, keyConfigured: Boolean(apiKey), enabled: Boolean(apiKey && billingAcknowledged),
         environmentKeyAvailable: Boolean(process.env.DEEPSEEK_API_KEY),
-        explainBusy: busy, scanBusy: scanning, used: requests, sessionLimit: maxRequests,
+        explainBusy: busy, scanBusy: scanning, readBusy: reading, used: requests, sessionLimit: maxRequests,
         note: 'Key is kept in memory only; no automatic submission.' }); return;
     }
     if (req.method !== 'POST') { sendJson(res, 404, { error: 'Not Found' }); return; }
@@ -111,6 +113,16 @@ const server = createServer(async (req, res) => {
       } finally { busy = false; }
       return;
     }
+    if (url.pathname === '/api/questions') {
+      if (reading) { sendJson(res, 429, { error: '上一项题目读取仍在进行中' }); return; }
+      const body = await readJson(req);
+      reading = true;
+      try {
+        const output = await readQuizQuestions({pointId:body?.pointId,cardNum:body?.cardNum});
+        sendJson(res, 200, output);
+      } finally { reading = false; }
+      return;
+    }
     if (url.pathname === '/api/scan') {
       if (scanning) { sendJson(res, 429, { error: '扫描已在进行中' }); return; }
       const body = await readJson(req);
@@ -128,7 +140,7 @@ const server = createServer(async (req, res) => {
   } catch (error) {
     const status = error?.status && Number.isInteger(error.status) ? error.status : 500;
     const display = status === 500
-      ? (String(error.message).startsWith('DeepSeek API HTTP') || /未登录|章节|课程配置|题干|课程笔记|未配置|请求超时|模型/.test(error.message)
+      ? (String(error.message).startsWith('DeepSeek API HTTP') || /未登录|章节|课程配置|题干|课程笔记|未配置|请求超时|模型|知识点|测验|任务卡|学习通|会话|字体/.test(error.message)
         ? String(error.message).slice(0, 160) : '请求失败，请检查网络及本地诊断信息')
       : String(error.message).slice(0, 160);
     if (!res.headersSent) sendJson(res, status, { error: display });

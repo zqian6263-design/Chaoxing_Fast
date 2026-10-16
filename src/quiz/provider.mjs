@@ -19,6 +19,10 @@ function textInput(value, label, maxLength) {
   if (/(?:cookie\s*:|authorization\s*:|bearer\s+\S+|(?:DEEPSEEK|GEMINI|GOOGLE|OPENCODE)_API_KEY\s*=|AIza[0-9A-Za-z_-]{20,})/i.test(value)) {
     throw new TypeError('检测到疑似凭据，请删除后再发送');
   }
+  // Reject obfuscated font substitutions until the user corrects the text.
+  if ((value.match(/[\u5A00-\u5B4F\uE000-\uF8FF]/g)||[]).length >= 2) {
+    throw new TypeError('检测到疑似字体混淆，请先根据原网页或截图修正题干');
+  }
   return value.trim();
 }
 
