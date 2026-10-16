@@ -14,3 +14,8 @@ _ref/
 tmp/
 watchdog.log
 .watchdog-stop
+.watchdog-last-exit
+
+# Isolated Windows portable Node runtime and build products
+.runtime/
+dist/

@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+const md5 = (value) => crypto.createHash('md5').update(value, 'utf8').digest('hex');
 const stripTags = (s) => s.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 const attr = (html, name) => { const m = html.match(new RegExp(`${name}="([^"]*)"`)); return m ? m[1] : ''; };
 
@@ -131,4 +133,21 @@ function calcEnc(clazzId, userid, jobid, objectId, playingTime, duration) {
 
 const warn = (m) => console.log('[警告] ' + m);
 
-export { decodeCoursePoint, decodeCourseCard, calcEnc, resolveRt };
+/**
+ * Verify the authoritative task state in a freshly fetched course card.
+ * Never infer completion from playback time or absence of parsed jobs.
+ */
+function getVideoCompletion(html, job) {
+  const data = extractMArg(html);
+  if (!data || !Array.isArray(data.attachments)) return 'unknown';
+  const id = String(job.jobid || '');
+  const objectid = String(job.objectid || '');
+  const task = data.attachments.find((card) =>
+    (id && String(card.jobid || '') === id) ||
+    (objectid && String(card.objectId || '') === objectid)
+  );
+  if (!task || typeof task.isPassed !== 'boolean') return 'unknown';
+  return task.isPassed ? 'confirmed' : 'pending';
+}
+
+export { decodeCoursePoint, decodeCourseCard, calcEnc, resolveRt, getVideoCompletion };

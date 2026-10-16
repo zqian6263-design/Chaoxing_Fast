@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Node-%E2%89%A518-brightgreen" alt="Node"/>
+  <img src="https://img.shields.io/badge/Node-%E2%89%A520-brightgreen" alt="Node"/>
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue" alt="License"/>
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs"/>
   <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-informational" alt="Platform"/>
@@ -18,7 +18,7 @@
 
 ---
 
-## ✨ 特性
+> **工程化修复版说明（分支 `fix/stability-portability-20261016`）**：视频达到设定播放比例不等于课程任务已经完成；仅当平台任务卡明确确认 `isPassed` 时计入成功。课程规则、风控或平台变更可能使自动化失败。详情见 [可靠性与部署规范](docs/RELIABILITY.md)。\n\n## Windows 跨电脑安装（新）\n\n下载本分支发布的 Windows 在线安装包 ZIP 并解压，双击 `install-windows.bat`（首次需联网，会安装运行依赖和 Chromium），随后双击 `launch-windows.bat` 进行交互式登录与课程选择。无需管理员权限；没有 Node.js 的电脑会下载并验证 Node.js 官方便携版。首次运行**不默认开启开机自启**，通过 `node doctor.mjs` 可检查依赖。\n\n**目前未完成真实平台验收；不要以本地日志代替学校平台成绩。**\n\n## ✨ 特性
 
 - 🖥️ **真实播放模式**：用内置浏览器逐个真实播放视频，播放器自行上报并判定完成 —— 最简单可靠。
 - ⚡ **2 倍速播放**：默认加速，节省一半时间（可调）。
@@ -45,7 +45,7 @@
 > 把下面这一整行直接发给 **Claude Code / Codex / Hermes / OpenCode** 等 Agent 即可完成本地部署并持续运行：
 
 ```
-在本地部署并运行 https://github.com/zqian6263-design/Chaoxing_Fast 这个项目：安装 Node 18+，运行 setup 完成依赖与 Chromium 浏览器安装，然后用 node start.mjs 启动；首次启动时请按提示让我登录超星账号（在弹出页面输入账号密码或扫码），并向我要课程的 URL（或让我用 --list-courses 列出后选择）；之后让脚本持续稳定运行，并开启实时进度网页 http://127.0.0.1:7788。
+在本地部署并运行 https://github.com/zqian6263-design/Chaoxing_Fast 这个项目：安装 Node 20+，运行 setup 完成依赖与 Chromium 浏览器安装，然后用 node start.mjs 启动；首次启动时请按提示让我登录超星账号（在弹出页面输入账号密码或扫码），并向我要课程的 URL（或让我用 --list-courses 列出后选择）；之后让脚本持续稳定运行，并开启实时进度网页 http://127.0.0.1:7788。
 ```
 
 > Agent 会自动读取本仓库的 [`AGENTS.md`](AGENTS.md) 获取准确执行步骤。部署完成后，**你只需提供超星账号密码与课程 URL**。
@@ -55,7 +55,7 @@
 
 | 依赖 | 说明 |
 | --- | --- |
-| Node.js ≥ 18 | [下载](https://nodejs.org) |
+| Node.js ≥ 20 | [下载](https://nodejs.org) |
 | Playwright + Chromium | 由 `setup` 自动安装 |
 
 ### 一键部署

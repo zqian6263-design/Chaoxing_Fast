@@ -2,6 +2,7 @@
 /* src/chaoxing_watch.mjs —— 真实播放模式（通用版）
    用法：node src/chaoxing_watch.mjs --url "<课程URL>" [参数]
         或先 node start.mjs 选择课程后自动运行。 */
+import './runtime.mjs';
 import { chromium } from 'playwright';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +13,7 @@ import {
   readCookieFile, cookieHeader, hasSession, courseFromUrl,
   readConfig, writeConfig, httpGet, listCourses, ROOT,
 } from './common.mjs';
-import { decodeCoursePoint, decodeCourseCard } from './parse.mjs';
+import { decodeCoursePoint, decodeCourseCard, getVideoCompletion } from './parse.mjs';
 
 const PROFILE = path.join(ROOT, 'browser-profile');
 
@@ -103,7 +104,7 @@ const DASH_HTML = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><m
 <script>
  var paused=false;async function toggle(){var a=paused?'resume':'pause';await fetch('/api/control?action='+a);}
  function updatePause(p){paused=p;var b=document.getElementById('btnpause');b.textContent=p?'▶ 继续':'⏸ 暂停';}
- async function tick(){try{var d=await (await fetch('/api/status',{cache:'no-store'})).json();updatePause(d.paused);var ph=document.getElementById('phase');ph.className='badge';ph.classList.add(d.phase);ph.textContent=d.phase==='scan'?('扫描任务清单 '+d.scanDone+'/'+d.scanTotal):d.phase==='watch'?('播放中 '+d.done+'/'+d.total):'已完成';document.getElementById('done').textContent=d.done;document.getElementById('total').textContent=d.total;var f=document.getElementById('fill');f.style.transform='scaleX('+(d.total?(d.done/d.total):0)+')';document.getElementById('meta').textContent=(d.noPlayer||d.failed)?('失败 '+d.failed+' / 无播放器 '+d.noPlayer):'';if(d.phase==='scan'){document.getElementById('cur').textContent='正在扫描 '+d.scanDone+'/'+d.scanTotal;}else{document.getElementById('cur').textContent=(d.curIdx?d.curIdx+'/'+d.total+' ': '')+(d.curName||'-')+(d.curTitle?(' · '+d.curTitle):'');}var pct=document.getElementById('pct');pct.textContent=(d.curDur?Math.round(d.curCt/d.curDur*100):0)+'%';document.getElementById('fill2').style.transform='scaleX('+(d.curDur?Math.min(1,d.curCt/d.curDur):0)+')';var lines=document.getElementById('lines');lines.innerHTML='';(d.log||[]).forEach(function(l){var p=document.createElement('div');p.className='line';p.textContent=l;lines.appendChild(p);});lines.scrollTop=lines.scrollHeight;}catch(e){}}
+ async function tick(){try{var d=await (await fetch('/api/status',{cache:'no-store'})).json();updatePause(d.paused);var ph=document.getElementById('phase');ph.className='badge';ph.classList.add(d.phase);ph.textContent=d.phase==='scan'?('扫描任务清单 '+d.scanDone+'/'+d.scanTotal):d.phase==='watch'?('播放中 '+d.done+'/'+d.total):(d.phase==='partial'?'部分未完成':'已完成');document.getElementById('done').textContent=d.done;document.getElementById('total').textContent=d.total;var f=document.getElementById('fill');f.style.transform='scaleX('+(d.total?(d.done/d.total):0)+')';document.getElementById('meta').textContent=(d.noPlayer||d.failed)?('失败 '+d.failed+' / 无播放器 '+d.noPlayer):'';if(d.phase==='scan'){document.getElementById('cur').textContent='正在扫描 '+d.scanDone+'/'+d.scanTotal;}else{document.getElementById('cur').textContent=(d.curIdx?d.curIdx+'/'+d.total+' ': '')+(d.curName||'-')+(d.curTitle?(' · '+d.curTitle):'');}var pct=document.getElementById('pct');pct.textContent=(d.curDur?Math.round(d.curCt/d.curDur*100):0)+'%';document.getElementById('fill2').style.transform='scaleX('+(d.curDur?Math.min(1,d.curCt/d.curDur):0)+')';var lines=document.getElementById('lines');lines.innerHTML='';(d.log||[]).forEach(function(l){var p=document.createElement('div');p.className='line';p.textContent=l;lines.appendChild(p);});lines.scrollTop=lines.scrollHeight;}catch(e){}}
  tick();setInterval(tick,1000);
 </script></body></html>`;
 
@@ -117,7 +118,9 @@ async function mapConcurrent(items, limit, worker) {
 async function buildPlan(course, cookie, pointsLimit, concurrency) {
   info('读取章节列表…');
   const stu = await httpGet('https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse', { courseid: course.courseId, clazzid: course.clazzId, cpi: course.cpi, ut: 's' }, cookie);
+  if (stu.status !== 200) throw new Error('Unable to fetch course chapters (HTTP ' + stu.status + ')');
   let points = decodeCoursePoint(stu.text);
+  if (!points.length) throw new Error('No chapters parsed. Login may have expired or the course page changed; stopping without claiming success.');
   if (pointsLimit > 0) points = points.slice(0, pointsLimit);
   const conc = Math.max(1, concurrency || 6);
   info(`共 ${points.length} 个知识点（LIMIT=${pointsLimit || '不限'}, 扫描并发=${conc}）`);
@@ -188,6 +191,24 @@ async function resolveCourse(o) {
   err('未提供 --url 且无已保存课程。请用 --url "<课程URL>" 指定，或先运行 node start.mjs。'); process.exit(1);
 }
 
+// The platform, not local video.currentTime, is the source of truth.
+async function verifyVideoCompletion(course, point, job, opts) {
+  const params = { clazzid: course.clazzId, courseid: course.courseId, knowledgeid: point.id,
+    ut: 's', cpi: course.cpi, v: '2025-0424-1038-3', mooc2: 1, num: job.num ?? '1', _t: Date.now() };
+  for (let i = 0; i < 3; i++) {
+    await sleep(i === 0 ? 8000 : 4000);
+    try {
+      params._t = Date.now();
+      const r = await httpGet('https://mooc1.chaoxing.com/mooc-ans/knowledge/cards', params, opts.cookie);
+      if (r.status !== 200) { warn('Verification HTTP ' + r.status); continue; }
+      const state = getVideoCompletion(r.text, job);
+      if (state === 'confirmed') return true;
+      if (state === 'unknown') warn('Verification inconclusive: card or task was not found.');
+    } catch (e) { warn('Verification request failed: ' + String(e.message).slice(0, 120)); }
+  }
+  return false;
+}
+
 async function watchVideo(browser, course, point, job, opts) {
   const params = { clazzid: course.clazzId, courseid: course.courseId, knowledgeid: point.id, ut: 's', cpi: course.cpi, v: '2025-0424-1038-3', mooc2: 1, num: (job.num ?? '1') };
   const u = new URL('https://mooc1.chaoxing.com/mooc-ans/knowledge/cards');
@@ -195,13 +216,14 @@ async function watchVideo(browser, course, point, job, opts) {
   const urlStr = u.toString();
   const attempts = opts.videoRetries || 3;
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    const page = await browser.newPage();
+    let page = null;
     let loaded = false;
     for (let g = 0; g < 3; g++) {
+      page = await browser.newPage();
       try { await page.goto(urlStr, { waitUntil: 'domcontentloaded', timeout: 60000 }); loaded = true; break; }
       catch (e) { warn(`[${job.name}] 载入失败(${g + 1}/3): ${String(e.message).slice(0, 80)}`); try { await page.close(); } catch {} await sleep(rand(5000, 9000)); }
     }
-    if (!loaded) { try { await page.close(); } catch {} continue; }
+    if (!loaded) continue;
     await page.waitForTimeout(2500);
     const vframe = await findVideoFrame(page, 90000);
     if (!vframe) { warn(`[${job.name}] 找不到播放器（第 ${attempt} 次）`); try { await page.close(); } catch {} await sleep(rand(4000, 8000)); continue; }
@@ -209,27 +231,40 @@ async function watchVideo(browser, course, point, job, opts) {
     await ensurePlaying(vframe, video, opts);
     const dur = await waitDuration(video, 120000);
     info(`[${job.name}] 开始播放 ${dur > 0 ? `${Math.round(dur)}s` : '(时长未知)'} @${opts.rate}x（第 ${attempt} 次）`);
-    let lastCt = -1, stalled = 0, lastLogCt = -60, rateTick = 0;
+    let lastCt = -1, stalled = 0, lastLogCt = -60, rateTick = 0, checkedNearThreshold = false;
     const check = async () => {
       const st = await video.evaluate((el) => ({ ct: Math.round(el.currentTime), dur: Math.round(el.duration || 0), paused: el.paused, ended: el.ended })).catch(() => ({ ct: 0, dur: 0, paused: true, ended: false }));
       if (st.paused) await ensurePlaying(vframe, video, opts);
       return st;
     };
-    const start = Date.now();
+    let deadline = Date.now();
     const maxMs = opts.maxSec > 0 ? opts.maxSec * 1000 : (dur > 0 ? (dur * opts.ratio / Math.max(opts.rate, 1)) * 1000 + 120000 : 1000 * 60 * 90);
-    while (Date.now() - start < maxMs) {
+    deadline += maxMs;
+    while (Date.now() < deadline) {
       await sleep(6000);
       if (DASH.paused) {
         await video.evaluate((el) => el.pause()).catch(() => {});
         warn(`[${job.name}] 已暂停，等待在网页点击「继续」…`);
+        const pauseStart = Date.now();
         while (DASH.paused) await sleep(3000);
+        deadline += Date.now() - pauseStart;
         await ensurePlaying(vframe, video, opts);
       }
       const st = await check();
       DASH.curCt = st.ct; if (st.dur > 0) DASH.curDur = st.dur;
-      if (st.ended || (st.dur > 0 && st.ct >= st.dur * opts.ratio)) {
-        warn(`[${job.name}] 已播放到 ${Math.round(opts.ratio * 100)}%（${st.ct}s/${st.dur}s），等待上报完成…`);
-        await sleep(12000); await page.close(); return 'done';
+      if (st.ended) {
+        const verified = await verifyVideoCompletion(course, point, job, opts);
+        await page.close();
+        return verified ? 'done' : 'unverified';
+      }
+      if (!checkedNearThreshold && st.dur > 0 && st.ct >= st.dur * opts.ratio) {
+        checkedNearThreshold = true;
+        info(`[${job.name}] 播放达到阈值，向平台查询实际完成状态…`);
+        if (await verifyVideoCompletion(course, point, job, opts)) {
+          await page.close();
+          return 'done';
+        }
+        warn(`[${job.name}] 平台尚未确认，继续播放直至结束`);
       }
       if (st.ct === lastCt) { stalled++; if (stalled >= 6) { info(`[${job.name}] 进度停滞，重试播放`); await ensurePlaying(vframe, video, opts); stalled = 0; } } else stalled = 0;
       lastCt = st.ct;
@@ -246,6 +281,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const cookies = readCookieFile();
   const cookie = cookieHeader(cookies);
+  opts.cookie = cookie;
 
   if (opts.listCourses) {
     const cs = await listCourses(cookie);
@@ -269,7 +305,7 @@ async function main() {
   await ctx.addCookies(cookies.map((c) => ({ name: c.name, value: c.value, domain: c.domain, path: c.path || '/' })));
   info('扫描完成，稍候 3 秒开始播放…'); await sleep(3000);
 
-  const stat = { done: 0, no_player: 0, timeout: 0 };
+  const stat = { done: 0, no_player: 0, timeout: 0, unverified: 0 };
   for (let i = 0; i < slice.length; i++) {
     const { point, job } = slice[i];
     if (DASH.paused) { warn('已暂停，等待在网页点击「继续」…'); while (DASH.paused) await sleep(3000); }
@@ -278,11 +314,14 @@ async function main() {
     const r = await watchVideo(ctx, course, point, job, opts);
     if (r === 'done') { ok(`完成: ${point.title} / ${job.name}`); stat.done++; DASH.done++; }
     else if (r === 'no_player') { warn('无播放器，跳过'); stat.no_player++; DASH.noPlayer++; }
+    else if (r === 'unverified') { warn('平台未确认完成，不能计为成功'); stat.unverified++; DASH.failed++; }
     else { warn('超时/未完成'); stat.timeout++; DASH.failed++; }
     await sleep(rand(2000, 4000));
   }
-  await ctx.close(); DASH.phase = 'done';
-  console.log('\n===== Watch 汇总 ====='); ok(`真实播放完成: ${stat.done}`); warn(`无播放器: ${stat.no_player}`); warn(`超时/未完成: ${stat.timeout}`);
+  await ctx.close();
+  const incomplete = stat.timeout + stat.no_player + stat.unverified;
+  DASH.phase = incomplete ? 'partial' : 'done';
+  console.log('\n===== Watch 汇总 ====='); ok(`真实播放完成: ${stat.done}`); warn(`无播放器: ${stat.no_player}`); warn(`超时/未完成: ${stat.timeout}`); warn(`平台未确认: ${stat.unverified}`); if (incomplete) process.exitCode = 2;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((e) => { err(`运行出错: ${e.stack || e.message}`); process.exit(1); });

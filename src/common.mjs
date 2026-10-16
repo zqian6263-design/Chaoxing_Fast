@@ -39,12 +39,22 @@ export function readCookieFile() {
   return [];
 }
 export function saveCookies(cookies) {
-  fs.writeFileSync(COOKIE_JSON, JSON.stringify(cookies, null, 2), 'utf8');
-  try { fs.writeFileSync(COOKIE_TXT, cookies.map(c => `${c.name}=${c.value}`).join('; '), 'utf8'); } catch {}
+  fs.writeFileSync(COOKIE_JSON, JSON.stringify(cookies, null, 2), { encoding: 'utf8', mode: 0o600 });
+  if (process.platform !== 'win32') {
+    try { fs.chmodSync(COOKIE_JSON, 0o600); } catch { }
+  }
+  // Do not create a second plaintext cookies.txt copy. Legacy imports remain read-only.
 }
 export function cookieHeader(cookies) { return (cookies || []).map(c => `${c.name}=${c.value}`).join('; '); }
 export function cookieValue(cookies, name) { const c = (cookies || []).find(x => x.name === name); return c ? c.value : (name === 'fid' ? '1024' : null); }
-export function hasSession(cookies) { return (cookies || []).some(c => c.name === '_uid' || c.name === 'UID'); }
+export function hasSession(cookies) {
+  const now = Date.now() / 1000;
+  return (cookies || []).some(c =>
+    (c.name === '_uid' || c.name === 'UID') &&
+    (c.expires == null || c.expires < 0 || c.expires > now) &&
+    typeof c.value === 'string' && c.value.length > 0
+  );
+}
 
 /* ---------- 配置 ---------- */
 export function readConfig() { try { return JSON.parse(fs.readFileSync(CONFIG, 'utf8')); } catch { return {}; } }

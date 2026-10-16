@@ -1,0 +1,50 @@
+name: Validation
+on:
+  push:
+    branches: [main, 'fix/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22, 24]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Install reproducible dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Node built-in tests
+        run: npm test
+      - name: Syntax and CLI smoke test
+        run: |
+          node --check start.mjs
+          node --check src/chaoxing_watch.mjs
+          node --check src/chaoxing_auto.mjs
+          node --check doctor.mjs
+          node start.mjs --help
+      - name: Validate PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $fail = $false
+          Get-ChildItem -Filter '*.ps1' | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors)
+            if ($errors.Count -gt 0) {
+              Write-Error "$($_.Name): $errors"
+              $fail = $true
+            }
+          }
+          if ($fail) { exit 1 }
