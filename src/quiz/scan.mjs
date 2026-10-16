@@ -32,6 +32,8 @@ export async function scanQuizzes({
   cookie,
   maxPoints = 8,
   maxCards = 4,
+  chapterNumber = null,
+  onProgress = () => {},
   fetchImpl = fetch,
   pause = async () => {},
 } = {}) {
@@ -63,10 +65,18 @@ export async function scanQuizzes({
   });
   const allPoints = decodeCoursePoint(chapters);
   if (!allPoints.length) throw new Error('未解析到章节，请检查登录会话或页面格式');
-  const points = allPoints.slice(0, maxPoints);
+  const selected = chapterNumber === null ? allPoints : allPoints.filter(p => {
+    const match = /^\s*(\d+)\./.exec(p.title);
+    return match && Number(match[1]) === chapterNumber;
+  });
+  if (chapterNumber !== null && (!Number.isInteger(chapterNumber) || chapterNumber < 1 || chapterNumber > 99))
+    throw new Error('章节号必须为 1–99 的整数');
+  if (!selected.length) throw new Error('该章节无可识别知识点，请检查章节编号');
+  const points = selected.slice(0, maxPoints);
   const results = [];
   let unknownCards = 0;
   let cardErrors = 0;
+  let inspected = 0;
   for (const p of points) {
     const jobs = new Map();
     for (let num = 0; num < maxCards; num++) {
@@ -89,11 +99,13 @@ export async function scanQuizzes({
       }
     }
     if (jobs.size) results.push({ pointId: p.id, title: p.title, quizzes: [...jobs.values()] });
+    inspected++;
+    onProgress({inspected,total:points.length,title:p.title,tasksFound:results.reduce((s,r)=>s+r.quizzes.length,0)});
   }
   const tasks = results.flatMap(p => p.quizzes);
   return {
     scannedPoints: points.length,
-    totalPoints: allPoints.length,
+    totalPoints: selected.length,
     cardsPerPoint: maxCards,
     scannedCards: points.length * maxCards,
     unresolvedCards: unknownCards + cardErrors,
@@ -101,7 +113,7 @@ export async function scanQuizzes({
     confirmed: tasks.filter(t => t.status === 'confirmed').length,
     pending: tasks.filter(t => t.status === 'pending').length,
     unknown: tasks.filter(t => t.status === 'unknown').length,
-    partialScan: points.length < allPoints.length || maxCards < 7 || unknownCards > 0 || cardErrors > 0,
+    partialScan: points.length < selected.length || maxCards < 7 || unknownCards > 0 || cardErrors > 0,
     results,
   };
 }

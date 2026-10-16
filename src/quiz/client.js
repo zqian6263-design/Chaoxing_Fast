@@ -127,4 +127,65 @@ $('scan').addEventListener('click', async () => {
   }catch(e){setText('scan-status','扫描失败：'+e.message);}
   finally{busy('scan',false);}
 });
+// One-click chapter runner. No browser quiz selections or submissions are made.
+let autoPoll=null;
+let autoJobId=null;
+function renderAuto(job) {
+  if(!job || job.state==='idle') return;
+  autoJobId=job.id;
+  $('auto-start').disabled=job.state==='running';
+  $('auto-cancel').disabled=job.state!=='running';
+  const message=[
+    '状态：'+({running:'进行中',completed:'流程结束',failed:'失败',cancelled:'已取消'}[job.state]||job.state),
+    job.message,
+    '章节 '+job.chapterNumber+' · 知识点 '+job.scanned+'/'+job.totalPoints+
+      ' · 测验任务 '+job.foundTasks+' · 已读取 '+job.readTasks+
+      ' · 已找到题目 '+job.foundQuestions+
+      ' · 已调用模型 '+job.modelRequests+'/'+job.limitRequests+' 批',
+    job.truncated?'达到每轮上限，结果不代表整章全部处理完成。':'',
+  ];
+  setText('auto-status',message.filter(Boolean).join('\n'));
+  const root=$('auto-results');
+  root.replaceChildren();
+  for(const result of job.results||[]) {
+    const card=add('article','auto-result');
+    card.append(add('strong','',result.pointTitle+' · 第 '+result.number+' 题 · '+(typeLabel[result.type]||'题型待确认')));
+    card.append(add('p','',result.stem));
+    card.append(add('p','',result.suggested?.length?'建议选项：'+result.suggested.join('、')+'（需核对）':'未生成可采信的建议选项'));
+    if(result.reason)card.append(add('p','',result.reason));
+    card.append(add('p','muted','置信标记：'+(result.confidence||'low')+' · '+(result.source||'AI 建议')));
+    if(result.warning)card.append(add('p','auto-warn',result.warning));
+    root.append(card);
+  }
+  for(const failure of job.failures||[])root.append(add('p','auto-warn',failure));
+  if(job.state!=='running' && autoPoll){clearInterval(autoPoll);autoPoll=null;}
+}
+async function fetchAutoStatus() {
+  try {
+    const r=await fetch('/api/auto-status',{cache:'no-store'});
+    if(!r.ok) throw Error('HTTP '+r.status);
+    renderAuto(await r.json());
+  }catch(e){setText('auto-status','自动解析状态获取失败：'+e.message);}
+}
+function beginAutoPolling() {
+  if(autoPoll)clearInterval(autoPoll);
+  autoPoll=setInterval(fetchAutoStatus,2500);
+}
+$('auto-start').addEventListener('click',async()=>{
+  busy('auto-start',true);
+  setText('auto-status','正在启动本章任务…');
+  try {
+    const body={chapterNumber:Number($('chapter-number').value),
+      maxPoints:Number($('auto-points').value), maxCards:3};
+    const job=await jsonPost('/api/auto-start',body);
+    renderAuto(job);beginAutoPolling();
+  }catch(e){setText('auto-status','无法启动：'+e.message);}
+  finally{if(!autoPoll)busy('auto-start',false);}
+});
+$('auto-cancel').addEventListener('click',async()=>{
+  if(!autoJobId)return;
+  try{renderAuto(await jsonPost('/api/auto-cancel',{id:autoJobId}));}
+  catch(e){setText('auto-status','取消失败：'+e.message);}
+});
 health();
+fetchAutoStatus();

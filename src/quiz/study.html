@@ -12,10 +12,20 @@ label{font-weight:600;display:block;margin-top:12px;margin-bottom:6px}input,text
 .out{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.85;border-left:3px solid #9bbaf9;padding:12px 16px;background:#f6f8fc;border-radius:6px;min-height:55px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px} .grid input{max-width:160px}
 #tasks{padding:0;list-style:none}#tasks li{padding:9px 3px;border-bottom:1px solid #e4e7ec}
-a{color:#155eef}.quiz-question{background:#f9fafb;border:1px solid #e4e7ec;border-radius:12px;padding:14px;margin-top:14px}.quiz-question .preview{width:100%;max-width:720px;height:auto;border:1px solid #cbd5e1;border-radius:6px;margin:10px 0}.quiz-question textarea{margin:8px 0}.quiz-question .warning{color:#b54708;font-size:13px;margin-top:6px}.quiz-select{display:flex;gap:8px;align-items:center;font-weight:normal}.quiz-select input{width:auto} @media(max-width:680px){.grid{grid-template-columns:1fr} main{margin:20px auto}}
+a{color:#155eef}.auto-result{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin:10px 0}.auto-result p{margin:6px 0;white-space:pre-wrap}.auto-warn{color:#b54708}#auto-status{white-space:pre-wrap;margin-top:14px}.quiz-question{background:#f9fafb;border:1px solid #e4e7ec;border-radius:12px;padding:14px;margin-top:14px}.quiz-question .preview{width:100%;max-width:720px;height:auto;border:1px solid #cbd5e1;border-radius:6px;margin:10px 0}.quiz-question textarea{margin:8px 0}.quiz-question .warning{color:#b54708;font-size:13px;margin-top:6px}.quiz-select{display:flex;gap:8px;align-items:center;font-weight:normal}.quiz-select input{width:auto} @media(max-width:680px){.grid{grid-template-columns:1fr} main{margin:20px auto}}
 </style>
 </head><body><main>
 <header><h1>学习通 · AI 学习辅导</h1><p>测验清单与学习解释。不会自动填入答案，也不会自动提交。</p><span class="status" id="health">检查服务中…</span> <a href="http://127.0.0.1:7788" rel="noreferrer">视频进度页面 ↗</a></header>
+<section class="panel"><h2>一键整章 AI 解析</h2>
+<p>一次点击自动扫描指定章节、读取选择/判断题，对字体混淆题目使用本地浏览器截图，并批量调用 DeepSeek Flash 分析。<strong>启动后，题干、选项及必要的截图会发送给 DeepSeek，产生按量计费请求。</strong><strong>每轮最多 5 次 API 请求、20 道题、15 个测验任务</strong>。超过上限或识别失败的部分会标明未处理；正式作答与提交仍由你人工确认。</p>
+<div class="grid">
+<div><label for="chapter-number">章节编号</label><input id="chapter-number" type="number" min="1" max="99" value="1" /></div>
+<div><label for="auto-points">本章最多扫描知识点（1–50）</label><input id="auto-points" type="number" min="1" max="50" value="50" /></div>
+</div>
+<button id="auto-start">一键扫描并批量解析</button><button id="auto-cancel" class="secondary" disabled>停止后续处理</button>
+<div class="muted" id="auto-status">未启动。请先在下方启用 DeepSeek API。</div>
+<div id="auto-results"></div>
+</section>
 <section class="panel"><h2>1. 连接 DeepSeek 模型</h2>
 <p>使用 <a href="https://platform.deepseek.com/" target="_blank" rel="noreferrer">DeepSeek 官方开放平台</a> 的 API Key，固定调用低成本 <strong>deepseek-flash</strong>。<strong>DeepSeek API 按 Token 计费，不是免费 API</strong>。本地如已设置 DEEPSEEK_API_KEY，无需再次粘贴。密钥只存于本地进程内存或已有系统环境中，不写入项目文件。每次服务启动最多允许 20 次手动讲解，无自动重试、无付费 Pro 模型回退。</p>
 <label for="key">DeepSeek API Key（系统环境变量已有则可留空）</label><input id="key" type="password" autocomplete="off" placeholder="已有 DEEPSEEK_API_KEY 可留空，否则粘贴密钥" />
@@ -30,7 +40,7 @@ a{color:#155eef}.quiz-question{background:#f9fafb;border:1px solid #e4e7ec;borde
 </div><button id="scan">扫描课程测验</button><div class="muted" id="scan-status">尚未扫描</div><ul id="tasks"></ul>
 </section>
 <section class="panel"><h2>3. 自动读取测验题目（只读）</h2>
-<p>先点击上方“扫描课程测验”，再点击对应知识点的“读取题目”。读取时浏览器只允许 GET / HEAD，不会点击作答按钮、保存或提交。检测到字体混淆时，将显示本机渲染的题目截图供核对；截图不会上传给 AI。</p>
+<p>先点击上方“扫描课程测验”，再点击对应知识点的“读取题目”。读取时浏览器只允许 GET / HEAD，不会点击作答按钮、保存或提交。检测到字体混淆时，将显示本机渲染的题目截图供核对；此处只读提取不上传截图；上方一键整章解析会将必要的截图发送给 DeepSeek。</p>
 <div class="muted" id="question-status">尚未读取题目</div>
 <div id="question-cards"></div>
 <button id="batch-copy" class="secondary">合并选中的题目到讲解框（最多 3 题）</button>

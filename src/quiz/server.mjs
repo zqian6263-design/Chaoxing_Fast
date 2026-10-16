@@ -12,6 +12,8 @@ import { fileURLToPath } from 'node:url';
 import { explainQuiz, DEEPSEEK_MODEL } from './provider.mjs';
 import { scanConfiguredCourse } from './scan.mjs';
 import { readQuizQuestions } from './reader.mjs';
+import { analyzeBatch } from './batch.mjs';
+import { createChapterRunner } from './pipeline.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.STUDY_PORT || '7789');
@@ -25,6 +27,16 @@ let scanning = false;
 let reading = false;
 let requests = 0;
 const maxRequests = 20;
+const runner = createChapterRunner({
+  scan: args => scanConfiguredCourse({...args, maxCards:args.maxCards||3, pause:()=>new Promise(r=>setTimeout(r,120))}),
+  read: args => readQuizQuestions(args),
+  acquireSlot: () => {
+    if(!billingAcknowledged || !apiKey || requests>=maxRequests)return false;
+    requests++;
+    return true;
+  },
+  analyze: group => analyzeBatch(group,{apiKey}),
+});
 
 const html = fs.readFileSync(path.join(DIR, 'study.html'), 'utf8');
 const js = fs.readFileSync(path.join(DIR, 'client.js'), 'utf8');
@@ -74,6 +86,9 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/client.js') {
       headers(res, 'text/javascript; charset=utf-8'); res.end(js); return;
     }
+    if (req.method === 'GET' && url.pathname === '/api/auto-status') {
+      sendJson(res, 200, runner.snapshot()); return;
+    }
     if (req.method === 'GET' && url.pathname === '/api/health') {
       sendJson(res, 200, { ok: true, provider: 'DeepSeek',
         model: DEEPSEEK_MODEL, keyConfigured: Boolean(apiKey), enabled: Boolean(apiKey && billingAcknowledged),
@@ -85,6 +100,7 @@ const server = createServer(async (req, res) => {
     if (!sameOrigin(req)) { sendJson(res, 403, { error: 'Origin or CSRF check failed' }); return; }
 
     if (url.pathname === '/api/key') {
+      if (runner.snapshot().state === 'running') { sendJson(res,409,{error:'批量任务进行中，不能切换密钥'});return; }
       const payload = await readJson(req);
       if (payload?.billingAcknowledged !== true) throw Object.assign(new Error('DeepSeek API 按量计费，请先确认已知晓可能扣费。'), { status: 400 });
       const submitted = typeof payload.apiKey === 'string' ? payload.apiKey.trim() : '';
@@ -96,13 +112,27 @@ const server = createServer(async (req, res) => {
       sendJson(res, 200, { ok: true }); return;
     }
     if (url.pathname === '/api/clear-key') {
+      if(runner.snapshot().state==='running') {
+        sendJson(res,409,{error:'请先取消运行中的自动解析，待其结束后清除密钥'});return;
+      }
       apiKey = '';
       billingAcknowledged = false;
       sendJson(res, 200, { ok: true }); return;
     }
+    if (url.pathname === '/api/auto-start') {
+      if(busy) {sendJson(res,409,{error:'已有模型讲解请求进行中'});return;}
+      if(!apiKey || !billingAcknowledged) { sendJson(res, 503, {error:'请先启用 DeepSeek 并确认 API 计费'});return; }
+      const body=await readJson(req);
+      sendJson(res,202,runner.start({chapterNumber:body.chapterNumber,maxPoints:body.maxPoints,maxCards:body.maxCards}));
+      return;
+    }
+    if (url.pathname === '/api/auto-cancel') {
+      const body=await readJson(req);
+      sendJson(res,200,runner.cancel(body.id));return;
+    }
     if (url.pathname === '/api/explain') {
       if (!apiKey || !billingAcknowledged) { sendJson(res, 503, { error: '请在本地页面启用 DeepSeek API 并确认已知晓按量计费' }); return; }
-      if (busy) { sendJson(res, 429, { error: '上一条讲解请求尚未结束' }); return; }
+      if (busy || runner.snapshot().state === 'running') { sendJson(res, 429, { error: '当前有其他模型解析任务正在执行' }); return; }
       if (requests >= maxRequests) { sendJson(res, 429, { error: '本次运行已达到 20 次请求上限，避免意外超额' }); return; }
       const body = await readJson(req);
       busy = true;
