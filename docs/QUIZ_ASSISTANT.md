@@ -3,7 +3,7 @@
 ## 当前已经实现
 
 - 原有视频任务继续在 http://127.0.0.1:7788 运行，不需要关闭或重启。
-- 在 http://127.0.0.1:7789 提供独立的测验清单、OpenCode Zen 免费模型 API Key 管理和 AI 学习解释界面。
+- 在 http://127.0.0.1:7789 提供独立的测验清单、OpenCode Console / Zen 免费模型 API Key 管理和 AI 学习解释界面。
 - 测验扫描：**只发 GET 请求**，读取课程任务卡上属于 workid/work/quiz/test/exam 的结构信息，仅显示知识点名称、任务类型与能被平台明确证明的状态。
 - 解释模式：用户**主动粘贴**一道题目、选项和必要的课堂笔记，再手动点击生成讲解。不会读取试题页面全文、填入答案、自动提交或操作成绩。
 - 此版本只实现文本题，图片、公式图片、字幕与自动课程资料检索尚未接入。
@@ -17,9 +17,9 @@ cd D:\win\chaoxing
 node src/quiz/server.mjs
 ```
 
-打开 http://127.0.0.1:7789 ，可在未配置 API Key 时先使用只读扫描。首次使用讲解需要到 [OpenCode Zen](https://opencode.ai/zen) 获取 API Key，在**本机**网页中手动粘贴，密钥只存在进程内存中，服务停止即消失；不要发给聊天助手、上传仓库或粘贴到题干中。
+打开 http://127.0.0.1:7789 ，可在未配置 API Key 时先使用只读扫描。首次使用讲解需要到 [OpenCode](https://opencode.ai) 获取 API Key（支持 Console 服务账户或 Zen），在**本机**网页中手动粘贴，密钥只存在进程内存中，服务停止即消失；不要发给聊天助手、上传仓库或粘贴到题干中。
 
-官方 API 文档列出 `mimo-v2.6-flash-free` 可通过 `https://opencode.ai/zen/v1/chat/completions` 调用。模型可用性与免费政策可能变化，**仅配置此模型，失败即停止，不会切换到付费模型**。免费也可能需创建账户或填写账单资料；请确认官方条款。未提供 Key 的本次验证不会发生真实 AI API 请求。
+官方 API 文档列出 `mimo-v2.6-flash-free`：Console 服务账户密钥（`oc_sk_` 前缀）通过 `https://opencode.ai/inference/openai/v1/chat/completions` 调用；其他 Zen 密钥通过 `https://opencode.ai/zen/v1/chat/completions` 调用。模型可用性与免费政策可能变化，**仅配置此模型，失败即停止，不会切换到付费模型**。免费也可能需创建账户或填写账单资料；请确认官方条款。未提供 Key 的本次验证不会发生真实 AI API 请求。
 
 每次服务运行最多 20 个讲解请求，无自动重试，输出不是正确答案保证。免费服务可能保留题干与笔记，请不要发送个人信息或受保护的课堂材料。
 

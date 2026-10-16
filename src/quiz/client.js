@@ -13,7 +13,7 @@ async function health() {
   try {
     const response = await fetch('/api/health', {cache:'no-store'});
     const status = await response.json();
-    setText('health', '本地服务在线 · 免费模型 '+status.model+' · '+(status.keyConfigured?'密钥已配置':'未配置密钥'));
+    setText('health', '本地服务在线 · '+status.provider+' · 免费模型 '+status.model+' · '+(status.keyConfigured?'密钥已配置':'未配置密钥'));
     setText('key-status', status.keyConfigured ? '已在本次会话启用密钥（不会显示或保存）' : '尚未配置 API Key');
     setText('explain-status', '本次会话已请求 '+status.used+' / '+status.sessionLimit);
   } catch(e) { setText('health', '服务不可用：'+e.message); }

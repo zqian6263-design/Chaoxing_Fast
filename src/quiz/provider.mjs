@@ -4,6 +4,7 @@
  * Only the allowlisted free model is reachable; paid-model fallback is forbidden.
  */
 export const ZEN_ENDPOINT = 'https://opencode.ai/zen/v1/chat/completions';
+export const CONSOLE_ENDPOINT = 'https://opencode.ai/inference/openai/v1/chat/completions';
 export const FREE_ZEN_MODEL = 'mimo-v2.6-flash-free';
 
 const SYSTEM = `你是课程学习辅导助手，不是自动提交测验的工具。
@@ -29,7 +30,11 @@ export async function explainQuiz({ question, notes = '' }, { apiKey, fetchImpl 
   if (!apiKey || typeof apiKey !== 'string') throw new Error('未配置 OpenCode Zen API Key');
   if (timeoutMs < 1000 || timeoutMs > 60000) throw new TypeError('不允许的请求超时时间');
 
-  const response = await fetchImpl(ZEN_ENDPOINT, {
+  // oc_sk_ is a Console service-account key, NOT a legacy Zen key.
+  // Route only to the official endpoints and keep the model fixed to a free ID.
+  const consoleKey = apiKey.startsWith('oc_sk_');
+  const endpoint = consoleKey ? CONSOLE_ENDPOINT : ZEN_ENDPOINT;
+  const response = await fetchImpl(endpoint, {
     method: 'POST',
     headers: {
       Authorization: 'Bearer ' + apiKey,
@@ -40,8 +45,6 @@ export async function explainQuiz({ question, notes = '' }, { apiKey, fetchImpl 
     body: JSON.stringify({
       model: FREE_ZEN_MODEL,
       stream: false,
-      temperature: 0.2,
-      max_tokens: 1400,
       messages: [
         { role: 'system', content: SYSTEM },
         { role: 'user', content: JSON.stringify({ question: q, course_notes: notes.trim() }, null, 0) },
@@ -50,7 +53,7 @@ export async function explainQuiz({ question, notes = '' }, { apiKey, fetchImpl 
   });
   if (!response.ok) {
     // Never print response bodies: third-party error responses can echo user text/credentials.
-    throw new Error('OpenCode Zen HTTP ' + response.status + (response.status === 429 ? '（限额或限流）' : ''));
+    throw new Error('OpenCode API HTTP ' + response.status + (response.status === 403 ? '（服务器拒绝请求，请检查 Console 推理权限、工作区策略或模型访问限制）' : response.status === 401 ? '（密钥无效或已撤销）' : response.status === 429 ? '（限额或限流）' : ''));
   }
   const raw = await response.text();
   if (raw.length > 1_000_000) throw new Error('模型响应超过大小限制');
@@ -59,5 +62,5 @@ export async function explainQuiz({ question, notes = '' }, { apiKey, fetchImpl 
   catch { throw new Error('模型返回的不是有效 JSON'); }
   const answer = data?.choices?.[0]?.message?.content;
   if (typeof answer !== 'string' || !answer.trim()) throw new Error('模型未返回可用的讲解文本');
-  return { model: FREE_ZEN_MODEL, explanation: answer.trim().slice(0, 16000) };
+  return { model: FREE_ZEN_MODEL, provider: consoleKey ? 'OpenCode Console' : 'OpenCode Zen', explanation: answer.trim().slice(0, 16000) };
 }

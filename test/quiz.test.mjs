@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { explainQuiz, ZEN_ENDPOINT, FREE_ZEN_MODEL } from '../src/quiz/provider.mjs';
+import { explainQuiz, ZEN_ENDPOINT, CONSOLE_ENDPOINT, FREE_ZEN_MODEL } from '../src/quiz/provider.mjs';
 import { extractQuizCards, scanQuizzes } from '../src/quiz/scan.mjs';
 
 test('provider accepts only explicitly declared free model, never leaks Cookie or keys into prompt', async () => {
@@ -23,6 +23,19 @@ test('provider accepts only explicitly declared free model, never leaks Cookie o
   assert.equal(result.model, FREE_ZEN_MODEL);
   assert.match(result.explanation, /概念/);
   assert.equal(calls,1);
+});
+test('Console service-account keys use the Console inference URL and never a paid fallback', async () => {
+  let called = false;
+  const response = await explainQuiz({question:'什么是机会成本？'}, {apiKey:'oc_sk_test-example',fetchImpl:async (url, opts) => {
+    called = true;
+    assert.equal(url, CONSOLE_ENDPOINT);
+    const body = JSON.parse(opts.body);
+    assert.equal(body.model, FREE_ZEN_MODEL);
+    assert.ok(!opts.body.includes('oc_sk_test-example'));
+    return {ok:true,text:async()=>JSON.stringify({choices:[{message:{content:'课程概念解释'}}]})};
+  }});
+  assert.ok(called);
+  assert.equal(response.provider,'OpenCode Console');
 });
 test('provider fails closed on credential-looking questions and malformed data', async () => {
   await assert.rejects(explainQuiz({question:'Cookie: session=hello'}, {apiKey:'test-secret-key'}), /疑似凭据/);

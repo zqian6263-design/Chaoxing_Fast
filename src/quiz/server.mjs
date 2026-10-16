@@ -72,7 +72,7 @@ const server = createServer(async (req, res) => {
       headers(res, 'text/javascript; charset=utf-8'); res.end(js); return;
     }
     if (req.method === 'GET' && url.pathname === '/api/health') {
-      sendJson(res, 200, { ok: true, provider: 'OpenCode Zen',
+      sendJson(res, 200, { ok: true, provider: apiKey.startsWith('oc_sk_') ? 'OpenCode Console' : 'OpenCode Zen',
         model: FREE_ZEN_MODEL, keyConfigured: Boolean(apiKey),
         explainBusy: busy, scanBusy: scanning, used: requests, sessionLimit: maxRequests,
         note: 'Key is kept in memory only; no automatic submission.' }); return;
@@ -121,7 +121,7 @@ const server = createServer(async (req, res) => {
   } catch (error) {
     const status = error?.status && Number.isInteger(error.status) ? error.status : 500;
     const display = status === 500
-      ? (String(error.message).startsWith('OpenCode Zen HTTP') || /未登录|章节|课程配置|题干|课程笔记|未配置|请求超时|模型/.test(error.message)
+      ? (String(error.message).startsWith('OpenCode API HTTP') || /未登录|章节|课程配置|题干|课程笔记|未配置|请求超时|模型/.test(error.message)
         ? String(error.message).slice(0, 160) : '请求失败，请检查网络及本地诊断信息')
       : String(error.message).slice(0, 160);
     if (!res.headersSent) sendJson(res, status, { error: display });
