@@ -14,6 +14,7 @@ import {
   readConfig, writeConfig, httpGet, listCourses, ROOT,
 } from './common.mjs';
 import { decodeCoursePoint, decodeCourseCard, getVideoCompletion } from './parse.mjs';
+import { isBrowserClosedError } from './browser-recovery.mjs';
 
 const PROFILE = path.join(ROOT, 'browser-profile');
 
@@ -301,8 +302,18 @@ async function main() {
   const slice = vids.slice(opts.start);
   info(`本次处理第 ${opts.start + 1} ~ ${opts.start + slice.length} 个视频（共 ${vids.length} 个）`);
 
-  const ctx = await chromium.launchPersistentContext(PROFILE, { headless: !opts.visible, viewport: { width: 1200, height: 800 }, args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
-  await ctx.addCookies(cookies.map((c) => ({ name: c.name, value: c.value, domain: c.domain, path: c.path || '/' })));
+  // Re-create the whole persistent context if Chromium is closed during playback.
+  const launchContext = async () => {
+    const opened = await chromium.launchPersistentContext(PROFILE, {
+      headless: !opts.visible, viewport: { width: 1200, height: 800 },
+      args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'],
+    });
+    await opened.addCookies(cookies.map((c) => ({
+      name: c.name, value: c.value, domain: c.domain, path: c.path || '/',
+    })));
+    return opened;
+  };
+  let ctx = await launchContext();
   info('扫描完成，稍候 3 秒开始播放…'); await sleep(3000);
 
   const stat = { done: 0, no_player: 0, timeout: 0, unverified: 0 };
@@ -311,14 +322,34 @@ async function main() {
     if (DASH.paused) { warn('已暂停，等待在网页点击「继续」…'); while (DASH.paused) await sleep(3000); }
     DASH.phase = 'watch'; DASH.curIdx = opts.start + i + 1; DASH.curTitle = point.title; DASH.curName = job.name; DASH.curCt = 0; DASH.curDur = (job.attDuration || 0);
     info(`(${opts.start + i + 1}/${vids.length}) ${point.title} -> ${job.name}`);
-    const r = await watchVideo(ctx, course, point, job, opts);
+    let r;
+    for (let restarts = 0; ; ) {
+      try {
+        r = await watchVideo(ctx, course, point, job, opts);
+        break;
+      } catch (error) {
+        if (!isBrowserClosedError(error) || restarts >= 2) throw error;
+        restarts++;
+        warn(`[Browser recovery ${restarts}/2] Chromium context closed unexpectedly on ${job.name}; checking server completion before replay.`);
+        // The platform may already have credited the current video before
+        // Chromium closed. Never count local playback as confirmation.
+        if (await verifyVideoCompletion(course, point, job, opts)) {
+          r = 'done';
+          break;
+        }
+        try { await ctx.close(); } catch {}
+        await sleep(3000 * restarts);
+        ctx = await launchContext();
+        info('Chromium session restored; retrying the same video at the configured playback rate.');
+      }
+    }
     if (r === 'done') { ok(`完成: ${point.title} / ${job.name}`); stat.done++; DASH.done++; }
     else if (r === 'no_player') { warn('无播放器，跳过'); stat.no_player++; DASH.noPlayer++; }
     else if (r === 'unverified') { warn('平台未确认完成，不能计为成功'); stat.unverified++; DASH.failed++; }
     else { warn('超时/未完成'); stat.timeout++; DASH.failed++; }
     await sleep(rand(2000, 4000));
   }
-  await ctx.close();
+  try { await ctx.close(); } catch {}
   const incomplete = stat.timeout + stat.no_player + stat.unverified;
   DASH.phase = incomplete ? 'partial' : 'done';
   console.log('\n===== Watch 汇总 ====='); ok(`真实播放完成: ${stat.done}`); warn(`无播放器: ${stat.no_player}`); warn(`超时/未完成: ${stat.timeout}`); warn(`平台未确认: ${stat.unverified}`); if (incomplete) process.exitCode = 2;
