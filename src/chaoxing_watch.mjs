@@ -14,6 +14,7 @@ import {
   readConfig, writeConfig, httpGet, listCourses, ROOT,
 } from './common.mjs';
 import { decodeCoursePoint, decodeCourseCard, getVideoCompletion } from './parse.mjs';
+import { isBrowserClosedError, getPlaybackPage } from './browser-recovery.mjs';
 
 const PROFILE = path.join(ROOT, 'browser-profile');
 
@@ -154,6 +155,7 @@ async function buildPlan(course, cookie, pointsLimit, concurrency) {
 async function findVideoFrame(page, timeoutMs = 90000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (page.isClosed()) throw new Error('Target page, context or browser has been closed');
     for (const f of page.frames()) { try { if (await f.locator('video').count()) return f; } catch {} }
     await sleep(1500);
   }
@@ -162,6 +164,7 @@ async function findVideoFrame(page, timeoutMs = 90000) {
 
 async function ensurePlaying(vframe, video, opts) {
   for (let attempt = 0; attempt < 6; attempt++) {
+    if (vframe.page().isClosed()) throw new Error('Target page, context or browser has been closed');
     const st = await video.evaluate((el) => ({ ct: el.currentTime, paused: el.paused, ready: el.readyState })).catch(() => ({ ct: 0, paused: true, ready: 0 }));
     if (!st.paused && st.ct > 0) return;
     await video.evaluate((el, rate) => { el.muted = true; if (rate > 1) el.playbackRate = rate; const p = el.play(); if (p && p.catch) p.catch(() => {}); }, opts.rate).catch(() => {});
@@ -174,9 +177,10 @@ async function ensurePlaying(vframe, video, opts) {
   }
 }
 
-async function waitDuration(video, timeoutMs = 120000) {
+async function waitDuration(page, video, timeoutMs = 120000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (page.isClosed()) throw new Error('Target page, context or browser has been closed');
     const d = await video.evaluate((el) => (el.duration && isFinite(el.duration) ? el.duration : 0)).catch(() => 0);
     if (d > 0) return d;
     await sleep(1500);
@@ -209,31 +213,40 @@ async function verifyVideoCompletion(course, point, job, opts) {
   return false;
 }
 
-async function watchVideo(browser, course, point, job, opts) {
+async function watchVideo(page, course, point, job, opts) {
   const params = { clazzid: course.clazzId, courseid: course.courseId, knowledgeid: point.id, ut: 's', cpi: course.cpi, v: '2025-0424-1038-3', mooc2: 1, num: (job.num ?? '1') };
   const u = new URL('https://mooc1.chaoxing.com/mooc-ans/knowledge/cards');
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, String(v));
   const urlStr = u.toString();
   const attempts = opts.videoRetries || 3;
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    let page = null;
+    // Reuse the same visible browser tab for every video. Never close it
+    // after an individual task; navigating to the next lesson replaces its content.
     let loaded = false;
     for (let g = 0; g < 3; g++) {
-      page = await browser.newPage();
+      if (page.isClosed()) throw new Error('Target page, context or browser has been closed');
       try { await page.goto(urlStr, { waitUntil: 'domcontentloaded', timeout: 60000 }); loaded = true; break; }
-      catch (e) { warn(`[${job.name}] 载入失败(${g + 1}/3): ${String(e.message).slice(0, 80)}`); try { await page.close(); } catch {} await sleep(rand(5000, 9000)); }
+      catch (e) {
+        if (isBrowserClosedError(e) || page.isClosed()) throw e;
+        warn(`[${job.name}] 载入失败(${g + 1}/3): ${String(e.message).slice(0, 80)}`);
+        await sleep(rand(5000, 9000));
+      }
     }
     if (!loaded) continue;
     await page.waitForTimeout(2500);
     const vframe = await findVideoFrame(page, 90000);
-    if (!vframe) { warn(`[${job.name}] 找不到播放器（第 ${attempt} 次）`); try { await page.close(); } catch {} await sleep(rand(4000, 8000)); continue; }
+    if (!vframe) { warn(`[${job.name}] 找不到播放器（第 ${attempt} 次）`); await sleep(rand(4000, 8000)); continue; }
     const video = vframe.locator('video').first();
     await ensurePlaying(vframe, video, opts);
-    const dur = await waitDuration(video, 120000);
+    const dur = await waitDuration(page, video, 120000);
     info(`[${job.name}] 开始播放 ${dur > 0 ? `${Math.round(dur)}s` : '(时长未知)'} @${opts.rate}x（第 ${attempt} 次）`);
     let lastCt = -1, stalled = 0, lastLogCt = -60, rateTick = 0, checkedNearThreshold = false;
     const check = async () => {
-      const st = await video.evaluate((el) => ({ ct: Math.round(el.currentTime), dur: Math.round(el.duration || 0), paused: el.paused, ended: el.ended })).catch(() => ({ ct: 0, dur: 0, paused: true, ended: false }));
+      if (page.isClosed()) throw new Error('Target page, context or browser has been closed');
+      const st = await video.evaluate((el) => ({ ct: Math.round(el.currentTime), dur: Math.round(el.duration || 0), paused: el.paused, ended: el.ended })).catch((error) => {
+        if (isBrowserClosedError(error) || page.isClosed()) throw error;
+        return { ct: 0, dur: 0, paused: true, ended: false };
+      });
       if (st.paused) await ensurePlaying(vframe, video, opts);
       return st;
     };
@@ -254,14 +267,12 @@ async function watchVideo(browser, course, point, job, opts) {
       DASH.curCt = st.ct; if (st.dur > 0) DASH.curDur = st.dur;
       if (st.ended) {
         const verified = await verifyVideoCompletion(course, point, job, opts);
-        await page.close();
         return verified ? 'done' : 'unverified';
       }
       if (!checkedNearThreshold && st.dur > 0 && st.ct >= st.dur * opts.ratio) {
         checkedNearThreshold = true;
         info(`[${job.name}] 播放达到阈值，向平台查询实际完成状态…`);
         if (await verifyVideoCompletion(course, point, job, opts)) {
-          await page.close();
           return 'done';
         }
         warn(`[${job.name}] 平台尚未确认，继续播放直至结束`);
@@ -271,7 +282,7 @@ async function watchVideo(browser, course, point, job, opts) {
       if (++rateTick % 5 === 0 && st.ct > 0) await video.evaluate((el, r) => { el.playbackRate = r; }, Math.max(opts.rate, 1)).catch(() => {});
       if (st.ct > 0 && st.ct - lastLogCt >= 60) { const pct = st.dur > 0 ? Math.round((st.ct / st.dur) * 100) + '%' : '?%'; info(`[${job.name}] 正在播放 ${st.ct}s / ${st.dur || '?'}s (${pct})`); lastLogCt = st.ct; }
     }
-    warn(`[${job.name}] 超时未看完（第 ${attempt} 次），重试…`); try { await page.close(); } catch {}
+    warn(`[${job.name}] 超时未看完（第 ${attempt} 次），重试…`);
   }
   warn(`[${job.name}] 多次尝试仍失败，跳过`);
   return 'timeout';
@@ -301,8 +312,20 @@ async function main() {
   const slice = vids.slice(opts.start);
   info(`本次处理第 ${opts.start + 1} ~ ${opts.start + slice.length} 个视频（共 ${vids.length} 个）`);
 
-  const ctx = await chromium.launchPersistentContext(PROFILE, { headless: !opts.visible, viewport: { width: 1200, height: 800 }, args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
-  await ctx.addCookies(cookies.map((c) => ({ name: c.name, value: c.value, domain: c.domain, path: c.path || '/' })));
+  // Re-create the whole persistent context if Chromium is closed during playback.
+  const launchContext = async () => {
+    const opened = await chromium.launchPersistentContext(PROFILE, {
+      headless: !opts.visible, viewport: { width: 1200, height: 800 },
+      args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'],
+    });
+    await opened.addCookies(cookies.map((c) => ({
+      name: c.name, value: c.value, domain: c.domain, path: c.path || '/',
+    })));
+    return opened;
+  };
+  let ctx = await launchContext();
+  // Persistent Chromium often supplies an initial blank tab. Reuse it.
+  let page = await getPlaybackPage(ctx);
   info('扫描完成，稍候 3 秒开始播放…'); await sleep(3000);
 
   const stat = { done: 0, no_player: 0, timeout: 0, unverified: 0 };
@@ -311,14 +334,35 @@ async function main() {
     if (DASH.paused) { warn('已暂停，等待在网页点击「继续」…'); while (DASH.paused) await sleep(3000); }
     DASH.phase = 'watch'; DASH.curIdx = opts.start + i + 1; DASH.curTitle = point.title; DASH.curName = job.name; DASH.curCt = 0; DASH.curDur = (job.attDuration || 0);
     info(`(${opts.start + i + 1}/${vids.length}) ${point.title} -> ${job.name}`);
-    const r = await watchVideo(ctx, course, point, job, opts);
+    let r;
+    for (let restarts = 0; ; ) {
+      try {
+        r = await watchVideo(page, course, point, job, opts);
+        break;
+      } catch (error) {
+        if (!isBrowserClosedError(error) || restarts >= 2) throw error;
+        restarts++;
+        warn(`[Browser recovery ${restarts}/2] Chromium context closed unexpectedly on ${job.name}; checking server completion before replay.`);
+        // The platform may already have credited the current video before
+        // Chromium closed. Never count local playback as confirmation.
+        if (await verifyVideoCompletion(course, point, job, opts)) {
+          r = 'done';
+          break;
+        }
+        try { await ctx.close(); } catch {}
+        await sleep(3000 * restarts);
+        ctx = await launchContext();
+        page = await getPlaybackPage(ctx);
+        info('Chromium session restored; retrying the same video at the configured playback rate.');
+      }
+    }
     if (r === 'done') { ok(`完成: ${point.title} / ${job.name}`); stat.done++; DASH.done++; }
     else if (r === 'no_player') { warn('无播放器，跳过'); stat.no_player++; DASH.noPlayer++; }
     else if (r === 'unverified') { warn('平台未确认完成，不能计为成功'); stat.unverified++; DASH.failed++; }
     else { warn('超时/未完成'); stat.timeout++; DASH.failed++; }
     await sleep(rand(2000, 4000));
   }
-  await ctx.close();
+  try { await ctx.close(); } catch {}
   const incomplete = stat.timeout + stat.no_player + stat.unverified;
   DASH.phase = incomplete ? 'partial' : 'done';
   console.log('\n===== Watch 汇总 ====='); ok(`真实播放完成: ${stat.done}`); warn(`无播放器: ${stat.no_player}`); warn(`超时/未完成: ${stat.timeout}`); warn(`平台未确认: ${stat.unverified}`); if (incomplete) process.exitCode = 2;

@@ -11,7 +11,7 @@ $names = @(
   'start-windows.bat','stop-windows.bat','start.sh',
   'run-start.ps1','run-stop.ps1','watchdog.ps1','watchdog-worker.mjs',
   'install-autostart.ps1','uninstall-autostart.ps1',
-  'install-windows.ps1','install-windows.bat',
+  'install-windows.ps1','install-windows.bat','start-quiz.ps1','start-quiz.bat',
   'launch-windows.ps1','launch-windows.bat',
   'src','assets','docs','test'
 )

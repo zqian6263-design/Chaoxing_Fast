@@ -150,4 +150,4 @@ function getVideoCompletion(html, job) {
   return task.isPassed ? 'confirmed' : 'pending';
 }
 
-export { decodeCoursePoint, decodeCourseCard, calcEnc, resolveRt, getVideoCompletion };
+export { decodeCoursePoint, decodeCourseCard, calcEnc, resolveRt, getVideoCompletion, extractMArg };
